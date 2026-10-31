@@ -1,6 +1,15 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { changedDirsOf, isChangedSince, remapPath } from "../src/lib/change-rules.ts";
+import {
+  CONTENT_MAX,
+  changedDirsOf,
+  DOCX_MAX,
+  isChangedSince,
+  isMarkdownText,
+  isTracked,
+  remapPath,
+  trackedMax,
+} from "../src/lib/change-rules.ts";
 
 test("isChangedSince", () => {
   const cur = { mtime: 1000, size: 10 };
@@ -26,4 +35,16 @@ test("changedDirsOf", () => {
     new Map([["a/b", 2], ["a", 3], ["a/b/e", 1]]),
   );
   assert.deepEqual(changedDirsOf([]), new Map());
+});
+
+test("tracked kinds: docx through its markdown", () => {
+  assert.equal(isTracked("markdown"), true);
+  assert.equal(isTracked("docx"), true);
+  assert.equal(isTracked("xlsx"), false);
+  assert.equal(isTracked("image"), false);
+  assert.equal(trackedMax("docx"), DOCX_MAX);
+  assert.equal(trackedMax("code"), CONTENT_MAX);
+  assert.equal(isMarkdownText("docx"), true);
+  assert.equal(isMarkdownText("markdown"), true);
+  assert.equal(isMarkdownText("mermaid"), false);
 });

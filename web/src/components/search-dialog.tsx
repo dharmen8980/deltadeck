@@ -18,7 +18,7 @@ import { FileKindIcon } from "@/components/file-icon";
 import { api, errorMessage, type ContentHit, type ContentMatch, type FileKind, type SearchResponse } from "@/lib/api";
 import { dirname } from "@/lib/paths";
 
-const TYPE_CHIPS = ["md", "mmd", "py", "sh", "json", "jsonl", "log", "out", "txt", "csv"];
+const TYPE_CHIPS = ["md", "mmd", "docx", "py", "sh", "json", "jsonl", "log", "out", "txt", "csv"];
 const ALL = "__all__";
 
 function Highlighted({ text, ranges }: { text: string; ranges: [number, number][] }) {

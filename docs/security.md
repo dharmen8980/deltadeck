@@ -38,6 +38,8 @@
     mermaid nodes (and `<img src>` in labels) are replaced with a local
     placeholder before rendering, and the diagram shows "N external images
     blocked". Nothing is fetched from a CDN, even in `next dev`.
+- **Word documents** (see [below](#word-documents)): converted on the server,
+  sanitized twice, view-only.
 - **PDF export network lockdown.** Headless Chrome runs with a temporary
   profile in the system temp dir (deleted when the browser closes) and with
   background networking, component updates, sync, default apps, domain
@@ -214,3 +216,57 @@ subcommands that read are used.
   folder with the same environment and config. The work tree must contain the
   folder (a `core.worktree` pointing elsewhere turns git off), and a folder
   inside `.git` is refused.
+
+## Word documents
+
+`.docx` files are converted on the server by mammoth (see [Word
+documents](docx.md)); nothing in the browser parses the zip or the XML.
+
+- **The zip is checked before mammoth sees it.** The file must be at most
+  20 MB. An OLE file (password-protected `.docx`, old `.doc`) and anything
+  that is not a zip are refused (422). The zip directory is then checked
+  without decompressing anything: at most 10,000 parts, no encrypted parts, no
+  part over 1 MB that expands more than 200:1 and at most 128 MB uncompressed
+  in total (413 otherwise). Python's `zipfile` enforces the declared sizes and
+  CRCs while reading, so a part cannot expand past what the directory says.
+- **XML is recognised by its content, not its name.** mammoth follows the
+  package relationships to its parts, whatever they are called (a main
+  document named `word/main.bin` is read just the same), so every part whose
+  first significant character (after a BOM and whitespace, UTF-16 decoded) is
+  `<` counts as XML. Each such part may be at most 8 MB and all of them
+  together 24 MB (413 otherwise), which bounds the DOM `xml.dom.minidom` builds.
+- **No DTDs, no entities.** Every XML part (as above) is scanned (streamed,
+  UTF-16 decoded) for `<!DOCTYPE` and `<!ENTITY`; a real Word document has
+  neither, so any match is refused (422). This rules out XXE and
+  billion-laughs before mammoth's `xml.dom.minidom` parses anything; the
+  bundled expat also has its own entity-amplification protection.
+- **Bounded work.** One request conversion and one search-indexing conversion
+  run at a time. A request waits at most 30 s for a running conversion, then
+  gets 503 ("busy, try again") instead of holding a server thread; indexing
+  uses its own lock and a lower XML limit (12 MB), so it never makes the
+  document being opened wait. Git's last-commit copy is converted under the
+  request lock and cached by its blob id.
+- **mammoth runs locked down:** `external_file_access=False` (linked images
+  and other external targets are never read), `include_embedded_style_map=False`
+  (a document cannot bring its own style map and map paragraphs to arbitrary
+  tags), and a custom image handler that inlines only embedded PNG, JPEG, GIF,
+  WebP and BMP images within the size limits as `data:` URIs; every other
+  image keeps only its alt text.
+- **The HTML is sanitized on the server** with an allowlist (stdlib
+  `html.parser`, building a fresh tree): only headings, paragraphs, lists,
+  tables, links, images, line breaks and inline emphasis survive. `script`,
+  `style`, `iframe`, `svg`, `math`, `object` and similar are dropped with their
+  content; any other unknown tag is dropped but its text kept. Attributes are
+  allowlisted per tag: `href` only for `http:`, `https:`, `mailto:` or a
+  `#bookmark` (control characters and whitespace removed before the check),
+  `id` only as a plain identifier (on `a` for bookmarks and on `li` for notes), `src` only as a `data:image/<raster>;base64`
+  URI, `colspan`/`rowspan` only as 1-999. No `style`, `class` or `on*`
+  attribute survives. The markdown is generated from the same sanitized tree.
+- **And again in the browser.** The viewer parses the HTML into a tree
+  (`rehype-raw`) and runs `rehype-sanitize` with an equally strict schema
+  (same tags and attributes, ids prefixed with `user-content-` so they cannot
+  clobber the page's), then drops any `src` that is not a raster `data:` image.
+  It renders the tree as React elements, never as `innerHTML`. Links behave as
+  in markdown (external ones open on click in a new tab).
+- **View-only.** The editor refuses `.docx` (415 from `/api/edit/file`, also
+  for creating one), and the UI offers no editing for it.

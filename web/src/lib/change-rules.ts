@@ -6,6 +6,24 @@ export const TEXT_KINDS: ReadonlySet<string> = new Set(["markdown", "mermaid", "
 /** Mirrors the server's readers.CONTENT_MAX: /api/content answers 413 above it. */
 export const CONTENT_MAX = 2 * 1024 * 1024;
 
+/** Mirrors the server's docx.DOCX_MAX: /api/docx answers 413 above it. */
+export const DOCX_MAX = 20 * 1024 * 1024;
+
+/**
+ * Kinds tracked through a text converted on the server rather than the file's own text:
+ * a .docx is snapshotted and diffed as its markdown (/api/docx?format=markdown).
+ */
+export const CONVERTED_KINDS: ReadonlySet<string> = new Set(["docx"]);
+
+/** Kinds with a tracked text: the file's own (TEXT_KINDS) or a converted one (CONVERTED_KINDS). */
+export const isTracked = (kind: string) => TEXT_KINDS.has(kind) || CONVERTED_KINDS.has(kind);
+
+/** Above this size the tracked text is not fetched (the server would answer 413). */
+export const trackedMax = (kind: string) => (CONVERTED_KINDS.has(kind) ? DOCX_MAX : CONTENT_MAX);
+
+/** The tracked text is markdown: block diffs and in-place highlights. */
+export const isMarkdownText = (kind: string) => kind === "markdown" || kind === "docx";
+
 /**
  * true when a file seen before has another mtime or size now (|Δmtime| > 1 ms).
  * Never viewed (undefined) -> false. `!==` rather than `>`: a file restored from

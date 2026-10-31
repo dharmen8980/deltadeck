@@ -13,6 +13,7 @@ dependencies = [
     "openpyxl>=3.1",
     "playwright>=1.64.0",
     "python-multipart>=0.0.32",
+    "mammoth>=1.8",
 ]
 
 [project.scripts]

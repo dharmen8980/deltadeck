@@ -348,3 +348,58 @@ def test_unborn_head(tmp_path):
         assert f["b.md"]["status"] == "??"
         assert c.get("/api/git/file", params={"path": "a.md"}).json()["head"] is None
         assert c.get("/api/git/blame", params={"path": "a.md"}).json()["tracked"] is False
+
+
+def _count_detects(monkeypatch, fail_first: int):
+    """Wraps run_git: counts rev-parse (detection) calls; the first `fail_first` time out."""
+    real, calls = gitmod.run_git, []
+
+    def fake(exe, args, **kw):
+        if "rev-parse" in args and "--show-toplevel" in args:
+            calls.append(time.monotonic())
+            if len(calls) <= fail_first:
+                raise gitmod.GitError(504, "git took too long")
+        return real(exe, args, **kw)
+
+    monkeypatch.setattr(gitmod, "run_git", fake)
+    return calls
+
+
+def test_detection_timeout_is_retried_after_a_backoff(repo, monkeypatch, caplog):
+    calls = _count_detects(monkeypatch, fail_first=1)
+    monkeypatch.setattr(gitmod, "DETECT_RETRY_S", 0.5)
+    with running(repo) as c:
+        with caplog.at_level("WARNING", logger="viewer"):
+            assert c.get("/api/config").json()["git_enabled"] is False
+        assert any("timed out" in r.getMessage() and "trying again" in r.getMessage() for r in caplog.records)
+        assert c.get("/api/git/status").status_code != 200
+        assert c.get("/api/config").json()["git_enabled"] is False  # within the backoff: git not run again
+        assert len(calls) == 1
+        time.sleep(0.6)
+        assert c.get("/api/config").json()["git_enabled"] is True
+        assert c.get("/api/git/status").status_code == 200
+        assert c.get("/api/config").json()["git_enabled"] is True
+        assert len(calls) == 2  # found: cached from then on
+
+
+def test_detection_keeps_retrying_while_git_times_out(repo, monkeypatch):
+    calls = _count_detects(monkeypatch, fail_first=2)
+    monkeypatch.setattr(gitmod, "DETECT_RETRY_S", 0.2)
+    with running(repo) as c:
+        assert c.get("/api/config").json()["git_enabled"] is False
+        time.sleep(0.3)
+        assert c.get("/api/config").json()["git_enabled"] is False
+        time.sleep(0.3)
+        assert c.get("/api/config").json()["git_enabled"] is True
+        assert len(calls) == 3
+
+
+def test_detection_other_failures_are_cached(tmp_path, monkeypatch):
+    calls = _count_detects(monkeypatch, fail_first=0)
+    monkeypatch.setattr(gitmod, "DETECT_RETRY_S", 0.0)
+    plain = tmp_path / "plain"
+    write(plain / "a.md", "# a\n")
+    with running(plain) as c:
+        assert c.get("/api/config").json()["git_enabled"] is False
+        assert c.get("/api/config").json()["git_enabled"] is False
+        assert len(calls) == 1  # not a repo: answered once

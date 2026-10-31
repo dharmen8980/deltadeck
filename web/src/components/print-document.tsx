@@ -2,9 +2,10 @@
 
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import { api, errorMessage, formatTime, type AppConfig, type ContentResponse, type FileInfo } from "@/lib/api";
+import { api, errorMessage, formatTime, type AppConfig, type DocxResponse, type FileInfo } from "@/lib/api";
 import { basename } from "@/lib/paths";
 import type { TocHeading } from "@/components/toc";
+import { DocxMarkup, docxComponents } from "@/components/viewers/docx-viewer";
 import { ARTICLE_CLASS, MarkdownMarkup, markdownComponents } from "@/components/viewers/markdown-viewer";
 import { MermaidDiagram } from "@/components/viewers/mermaid-viewer";
 
@@ -106,7 +107,10 @@ function firstHeading(md: string): { text: string; first: boolean } | null {
 interface Loaded {
   config: AppConfig;
   file: FileInfo;
-  content: ContentResponse;
+  /** the markdown or mermaid source; a .docx's converted markdown */
+  text: string;
+  /** a .docx: its converted HTML is printed */
+  docx: DocxResponse | null;
 }
 
 export function PrintDocument() {
@@ -132,8 +136,15 @@ export function PrintDocument() {
       return;
     }
     const ctrl = new AbortController();
-    Promise.all([api.config(ctrl.signal), api.file(path, ctrl.signal), api.content(path, ctrl.signal)])
-      .then(([config, file, content]) => setLoaded({ config, file, content }))
+    Promise.all([api.config(ctrl.signal), api.file(path, ctrl.signal)])
+      .then(async ([config, file]) => {
+        if (file.kind === "docx") {
+          const docx = await api.docx(path, ctrl.signal);
+          return { config, file, text: docx.markdown, docx };
+        }
+        return { config, file, text: (await api.content(path, ctrl.signal)).text, docx: null };
+      })
+      .then((l) => setLoaded(l))
       .catch((e) => {
         if (!ctrl.signal.aborted) setFatal(errorMessage(e) || "could not load the document");
       });
@@ -142,11 +153,15 @@ export function PrintDocument() {
 
   const isMermaid = loaded?.file.kind === "mermaid";
   const heading = useMemo(
-    () => (loaded && !isMermaid ? firstHeading(loaded.content.text) : null),
+    () => (loaded && !isMermaid ? firstHeading(loaded.text) : null),
     [loaded, isMermaid],
   );
   const title = heading?.text || (loaded ? loaded.file.name : basename(path));
-  const components = useMemo(() => markdownComponents(loaded?.file.path ?? path, { print: true }), [loaded, path]);
+  const isDocx = Boolean(loaded?.docx);
+  const components = useMemo(
+    () => (isDocx ? docxComponents : markdownComponents)(loaded?.file.path ?? path, { print: true }),
+    [loaded, path, isDocx],
+  );
 
   // Page box: @page size/margins and the printable height used to scale figures.
   const [pw, ph] = PAPER[paperKey];
@@ -289,11 +304,15 @@ export function PrintDocument() {
           ) : null}
           {isMermaid ? (
             <div className="pdf-mermaid-file">
-              <MermaidDiagram source={loaded.content.text} theme="light" print />
+              <MermaidDiagram source={loaded.text} theme="light" print />
             </div>
           ) : (
             <article className={`${ARTICLE_CLASS} pdf-article${heading?.first ? " pdf-hide-first-h1" : ""}`}>
-              <MarkdownMarkup text={loaded.content.text} components={components} />
+              {loaded.docx ? (
+                <DocxMarkup data={loaded.docx} components={components} />
+              ) : (
+                <MarkdownMarkup text={loaded.text} components={components} />
+              )}
             </article>
           )}
         </>

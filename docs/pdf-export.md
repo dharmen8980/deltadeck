@@ -1,6 +1,6 @@
 # PDF export
 
-The file header of a markdown or mermaid file has a **PDF** menu: *Download PDF*
+The file header of a markdown, mermaid or `.docx` file has a **PDF** menu: *Download PDF*
 (A4, orientation *Auto* by default), paper A4/Letter, orientation
 Auto/Portrait/Landscape and an optional table of contents (the choice is
 remembered in localStorage). *Auto* prints markdown in portrait and a
@@ -16,8 +16,10 @@ diagram failed or an image was missing, the toast says so (the response carries
 How it works:
 
 1. `/api/pdf` runs the same `PathGuard.resolve` as every other endpoint (403
-   outside the root or denied, 404 missing), then accepts only the `markdown`
-   and `mermaid` kinds (else 400) and files up to 2 MB (else 413).
+   outside the root or denied, 404 missing), then accepts only the `markdown`,
+   `mermaid` and `docx` kinds (else 400) and files up to 2 MB, or 20 MB for
+   `.docx` (else 413). A `.docx` prints its converted, sanitized HTML (see
+   [Word documents](docx.md)).
 2. The server drives the system Chrome (headless, through Playwright) to its own
    static page `http://127.0.0.1:<port>/print?p=<path>&paper=&orientation=&toc=`.
    That route of the static export (`web/src/app/print`) renders only the

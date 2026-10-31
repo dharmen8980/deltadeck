@@ -18,6 +18,16 @@
   content-indexed (their names are still searchable).
 - CSV previews show the first 5000 rows, and xlsx the first 1000 rows per
   sheet, with values stringified.
+- Word `.docx` files are shown as plain content, not as Word lays them out:
+  page layout, fonts, colours, alignment, headers and footers, comments,
+  tracked changes, text boxes, shapes, charts and equations are not shown. A
+  numbered list that Word continues after an ordinary paragraph starts again
+  at 1. Documents with more than 8 MB of XML in one part (24 MB in all) are
+  refused, and over 12 MB in all are not content-indexed. Linked images, images over 5 MB (16 MB or 200 in
+  total) and EMF/WMF/TIFF images are placeholders. Documents over 20 MB, `.doc`
+  files and password-protected documents are refused; very long documents are
+  cut at 2 MB of markdown. They are view-only, even with `--allow-edit`. See
+  [Word documents](docx.md).
 - In dark mode each mermaid diagram is rendered twice (dark for the screen, a
   light copy that only `@media print` shows), so printing uses light colours.
 - PDF export: diagrams wider than the page are scaled down to the page width.
@@ -28,7 +38,10 @@
   mermaid `img:` icons from a CDN) print as placeholders. Diagrams are not
   rasterised, so text in the PDF stays selectable.
 - Changed since you last looked:
-  - Files over 2 MB get a dot and a banner, but no highlights or diff, because
+  - A `.docx` is compared as its converted markdown, so a change of
+    formatting only (fonts, colours, layout) counts as "same text" and is seen
+    right away.
+  - Files over 2 MB (`.docx` over 20 MB) get a dot and a banner, but no highlights or diff, because
     neither the earlier copy nor the current text is available.
   - The history lives in the server's data dir (`seen.sqlite3`) and is shared
     by every browser on that server; a viewer started with another data dir
@@ -68,8 +81,8 @@
     purpose (see [Security model](security.md#git)), so a repository that
     relies on a clean filter (git-lfs, git-crypt, …) can show every such file
     as changed, or compare against the pointer or encrypted text.
-  - Git detection runs once per folder; install git and restart the viewer (or
-    switch folders) to turn the views on. Git older than 2.32 is not used,
+  - Git detection runs once per folder (a timeout is retried every 30 s);
+    install git and restart the viewer (or switch folders) to turn the views on. Git older than 2.32 is not used,
     and partial clones need git 2.45 or newer.
   - `.gitattributes` in the work tree is not read (attributes come from the
     empty tree, git 2.40+), so `eol` / `text` settings there do not apply and

@@ -9,6 +9,7 @@ export type FileKind =
   | "json"
   | "csv"
   | "xlsx"
+  | "docx"
   | "code"
   | "text"
   | "binary";
@@ -102,6 +103,25 @@ export interface XlsxSheet {
 
 export interface XlsxResponse {
   sheets: XlsxSheet[];
+}
+
+/** /api/docx: a Word document converted on the server (view-only, sanitized). */
+export interface DocxResponse {
+  path: string;
+  /** sanitized HTML, one top-level element per line; only with format=html */
+  html?: string;
+  /** the same content as markdown: searched, snapshotted and diffed */
+  markdown: string;
+  /** [startLine, endLine] (1-based) in `markdown` of each top-level HTML element */
+  blocks: [number, number][];
+  /** what the conversion left out (unsupported content, dropped images) */
+  warnings: string[];
+  /** the document was cut at a block boundary (size limit) */
+  truncated: boolean;
+  images: number;
+  images_dropped: number;
+  size: number;
+  mtime: number;
 }
 
 export interface NameHit {
@@ -287,6 +307,14 @@ export const api = {
     getJson<TextResponse>(`/api/text${qs({ path, line })}`, signal),
   csv: (path: string, signal?: AbortSignal) => getJson<CsvResponse>(`/api/csv${qs({ path })}`, signal),
   xlsx: (path: string, signal?: AbortSignal) => getJson<XlsxResponse>(`/api/xlsx${qs({ path })}`, signal),
+  docx: (path: string, signal?: AbortSignal) => getJson<DocxResponse>(`/api/docx${qs({ path })}`, signal),
+  docxMarkdown: (path: string, signal?: AbortSignal) =>
+    getJson<DocxResponse>(`/api/docx${qs({ path, format: "markdown" })}`, signal),
+  /** The text "changed since viewed" and git compare: a .docx is tracked as its markdown. */
+  trackedText: (path: string, kind: string, signal?: AbortSignal): Promise<string> =>
+    kind === "docx"
+      ? getJson<DocxResponse>(`/api/docx${qs({ path, format: "markdown" })}`, signal).then((r) => r.markdown)
+      : getJson<ContentResponse>(`/api/content${qs({ path })}`, signal).then((r) => r.text),
   gitStatus: (signal?: AbortSignal) => getJson<GitStatusResponse>("/api/git/status", signal),
   gitFile: (path: string, signal?: AbortSignal) => getJson<GitFileResponse>(`/api/git/file${qs({ path })}`, signal),
   gitBlame: (path: string, start: number, count: number, signal?: AbortSignal) =>

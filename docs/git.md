@@ -25,6 +25,12 @@ Without git, outside a repository, or with `--git off`, none of this appears.
   nothing. If the last commit's version is binary, a symlink or over 2 MB,
   only "binary file, not compared" / "too large to compare" is shown.
 - A renamed file is compared with its old path in the last commit.
+- A `.docx` is compared as markdown: the last commit's version (up to 20 MB) is
+  converted on the server the same way as the file on disk (see [Word
+  documents](docx.md)) and cached by its blob id. One that cannot be converted
+  counts as binary; while another conversion is running for more than 30 s
+  `/api/git/file` answers 503 ("busy, try again"). Blame
+  is not offered for `.docx`.
 
 ## Uncommitted
 
@@ -84,6 +90,12 @@ git the views are refused for them (see
 - `/api/config` reports `"git_enabled"`; the UI hides every git control when it
   is false. Detection happens once per folder (on the first request after the
   folder is opened); restart the viewer or switch folders after installing git.
+  A detection that times out (5 s) is not kept: it is tried again 30 s later
+  (logged as `git: detection timed out ... trying again`). On macOS this is
+  usually a privacy prompt: git is held until you answer "… would like to
+  access files in your Desktop folder" (also Documents, Downloads), e.g. for a
+  worktree whose main `.git` is outside the opened folder; allow it and git
+  turns on within 30 s.
 - Repositories owned by another user are refused by git itself
   (`safe.directory`) and the features stay off. User and system git config are
   not read at all, so `safe.directory` in your `~/.gitconfig` does not change

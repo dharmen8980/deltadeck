@@ -9,11 +9,12 @@ import re
 import sqlite3
 import threading
 
+from .docx import DOCX_MAX, DocxError, convert_cached
 from .store import Entry, Store
 
 log = logging.getLogger("viewer.search")
 
-INDEXED_KINDS = {"markdown", "mermaid", "code", "json", "csv", "text"}
+INDEXED_KINDS = {"markdown", "mermaid", "code", "json", "csv", "text", "docx"}
 MAX_FILES = 50
 MAX_NAMES = 20
 MAX_LINES = 5
@@ -134,6 +135,8 @@ class SearchIndex:
 
     # --- maintenance --------------------------------------------------------
     def _read(self, e: Entry) -> str | None:
+        if e.kind == "docx":
+            return self._read_docx(e)
         if e.kind not in INDEXED_KINDS or e.size > self.max_bytes:
             return None
         # Entries come from the store, which only holds vetted in-root paths.
@@ -145,6 +148,18 @@ class SearchIndex:
         if len(data) > self.max_bytes:
             return None
         return data.decode("utf-8", errors="replace")
+
+    def _read_docx(self, e: Entry) -> str | None:
+        """The document's markdown (viewer.docx, cached), up to the search limit. Converted under
+        the background lock and a lower XML limit, so indexing never holds up a viewer request."""
+        if e.size > DOCX_MAX:
+            return None
+        try:
+            text = convert_cached(os.path.join(self.root, *e.path.split("/")), images=False,
+                                  background=True).markdown
+        except (DocxError, OSError):
+            return None
+        return text if len(text.encode("utf-8")) <= self.max_bytes else None
 
     def remove(self, path: str) -> None:
         with self._lock:

@@ -42,7 +42,8 @@ from fastapi import FastAPI, Query, Request
 from fastapi.responses import JSONResponse
 
 from .config import Settings, canonical_path
-from .paths import PathError, PathGuard, kind_of
+from .docx import DOCX_MAX, DocxError, convert_blob_cached
+from .paths import PathError, PathGuard, ext_of, kind_of
 from .readers import CONTENT_MAX
 
 log = logging.getLogger("viewer")
@@ -53,6 +54,7 @@ NO_LAZY_FETCH_VERSION = (2, 45)  # GIT_NO_LAZY_FETCH; older git refuses partial 
 GIT_TIMEOUT = 10.0  # seconds per git call
 STATUS_TIMEOUT = 20.0  # status hashes changed files: allow more
 DETECT_TIMEOUT = 5.0
+DETECT_RETRY_S = 30.0  # a detection that timed out is tried again this long after, not cached
 OUTPUT_MAX = 32 * 1024 * 1024  # bytes of stdout read from one git call
 STDERR_MAX = 64 * 1024
 STATUS_MAX_ENTRIES = 5000
@@ -625,6 +627,8 @@ class GitRepo:
             if mode == "120000":
                 res["binary"] = True  # a symlink: its target is not shown
                 return res
+            if ext_of(git_path) == "docx":
+                return self._head_docx(oid, n, res)
             if n > CONTENT_MAX:
                 res["tooLarge"] = True
                 return res
@@ -635,6 +639,23 @@ class GitRepo:
                 res["text"] = data.decode("utf-8", errors="replace")
             return res
         return None
+
+    def _head_docx(self, oid: str, n: int, res: dict) -> dict:
+        """A .docx in HEAD: its markdown (viewer.docx, the same pipeline and limits as the work
+        tree's copy), so it is compared like the text the change tracker snapshots. Cached by the
+        blob id and converted under the same lock as the viewer's conversions."""
+        if n > DOCX_MAX:
+            res["tooLarge"] = True
+            return res
+        try:
+            res["text"] = convert_blob_cached(oid, lambda: self.run(["cat-file", "blob", oid],
+                                                                    limit=DOCX_MAX + 1)).markdown
+        except DocxError as e:
+            if e.status == 503:
+                raise GitError(503, e.detail) from None
+            res["binary"] = e.status != 413
+            res["tooLarge"] = e.status == 413
+        return res
 
     def file(self, path: str | None) -> dict:
         rel, st = self._resolve(path, allow_missing=True)
@@ -719,30 +740,48 @@ def _parse_blame(out: bytes) -> tuple[list[dict], dict[str, dict]]:
 
 
 class GitLink:
-    """The GitRepo of one root, detected once on first use (thread-safe)."""
+    """The GitRepo of one root, detected on first use (thread-safe). The answer is kept for the
+    life of the server, except a detection that timed out: git can block on something that goes
+    away (macOS holds a process that touches a privacy-protected folder - Desktop, Documents,
+    Downloads - until the user answers the access prompt, e.g. a worktree whose .git lives outside
+    the chosen folder), so that is tried again DETECT_RETRY_S later instead."""
 
     def __init__(self, settings: Settings, guard: PathGuard):
         self.settings = settings
         self.guard = guard
         self._lock = threading.Lock()
         self._done = False
+        self._retry_at = 0.0  # monotonic time of the next try after a timeout
         self._repo: GitRepo | None = None
 
     def repo(self) -> GitRepo | None:
         with self._lock:
-            if not self._done:
+            if not self._done and time.monotonic() >= self._retry_at:
                 try:
                     self._repo = open_repo(self.settings, self.guard)
+                    self._done = True
+                except DetectTimeout as e:
+                    self._repo = None
+                    self._retry_at = time.monotonic() + DETECT_RETRY_S
+                    log.warning("git: detection timed out for %s (%s); trying again in %.0f s%s",
+                                self.settings.root, e, DETECT_RETRY_S,
+                                " - is a macOS privacy prompt (folder access) waiting for an answer?"
+                                if sys.platform == "darwin" else "")
                 except Exception:  # never let detection break the viewer
                     log.exception("git: detection failed for %s", self.settings.root)
                     self._repo = None
-                self._done = True
+                    self._done = True
             return self._repo
+
+
+class DetectTimeout(Exception):
+    """open_repo: git did not answer in DETECT_TIMEOUT (GitLink retries later)."""
 
 
 def open_repo(settings: Settings, guard: PathGuard) -> GitRepo | None:
     """The git work tree containing the root, or None (git off or missing, not a repo, the root
-    inside .git, a repo git refuses to use, e.g. owned by another user)."""
+    inside .git, a repo git refuses to use, e.g. owned by another user). DetectTimeout when git
+    took longer than DETECT_TIMEOUT."""
     exe = find_git(settings.git)
     if exe is None or settings.root is None:
         return None
@@ -756,6 +795,8 @@ def open_repo(settings: Settings, guard: PathGuard) -> GitRepo | None:
                                      "--show-object-format"],
                                cwd=settings.root, env=env, timeout=DETECT_TIMEOUT, limit=64 * 1024)
     except GitError as e:
+        if e.status == 504:
+            raise DetectTimeout(e.detail) from None
         log.info("git: disabled for %s: %s", settings.root, e.detail)
         return None
     lines = os.fsdecode(out).splitlines()

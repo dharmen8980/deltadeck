@@ -27,6 +27,8 @@ _DISGUISE = set("\u200b\u200c\u200d\u200e\u200f\u202a\u202b\u202c\u202d\u202e"
 _UNSAFE_UPLOAD = set('<>:"|?*')
 MAX_SUFFIX = 999
 HISTORY_TEXT_MAX = 2 * 1024 * 1024
+# Shown converted (viewer.docx): writing text into one would destroy the document.
+VIEW_ONLY_EXT = frozenset({"docx"})
 
 
 class EditError(Exception):
@@ -357,6 +359,8 @@ class Editor:
 
     # --- operations ---------------------------------------------------------
     def save(self, path: str, content: str, base_sha256: str | None, create: bool = False):
+        if isinstance(path, str) and ext_of(path.rsplit("/", 1)[-1]) in VIEW_ONLY_EXT:
+            raise EditError(415, "this file type is view-only: it cannot be edited or saved as text")
         data = content.encode("utf-8")
         if len(data) > self.s.edit_max_bytes:
             raise EditError(413, f"content larger than {self.s.edit_max_bytes} bytes")

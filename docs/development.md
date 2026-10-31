@@ -99,7 +99,21 @@ filters, hooks, pager) pointing at a script that would create a marker file
 and never does, nothing written inside the repository, not a repository and
 `--git off` turning git off, a root inside `.git`, cross-site requests and
 other methods refused, timeouts killing git, the output cap, finding git and
-the setting, and an unborn `HEAD`. `test_desktop.py` covers desktop mode against a fake bridge: picker success,
+the setting, and an unborn `HEAD`. `test_docx.py` covers `.docx` (documents built by `docx_build.py`, no
+python-docx): headings, lists, tables, links, footnotes and images in both
+the HTML and the markdown, markdown escaping, the server sanitizer
+(script/style/`on*`/`javascript:`/external images), an embedded style map
+being ignored, DOCTYPE/ENTITY refusal (also UTF-16, and in a main part with
+a non-`.xml` name), zip bombs, part count, per-part and total XML size
+limits, merged-cell (rowspan) column alignment in the markdown, the style map
+(Title, Subtitle, Quote, underline) and quiet style notes, bookmark anchors,
+the 503 when a conversion is busy, indexing's own lock and cache priority,
+the git blob cache, corrupt, non-zip and OLE files, image limits, truncation at
+a block, `/api/docx` (formats, 400/403/404/413/422), cache invalidation and
+bounds, search indexing and reindexing on change, the seen digest of the
+markdown, view-only (415 on save and create), `/api/pdf` accepting `.docx`
+and git's last-commit version as markdown.
+`test_desktop.py` covers desktop mode against a fake bridge: picker success,
 cancel, 409, timeout and token refusal; PDF success, the payload (same-origin
 `/print` URL and query, templates, margins, timeouts) and every error-status
 mapping; the CLI refusing `--desktop` without the bridge env, printing
@@ -113,7 +127,9 @@ TypeScript files in `web/test/` directly (Node 23.6 or newer), and cover the
 diff engine and the change summary (`src/lib/diff.ts`), the change rules (`src/lib/change-rules.ts`),
 the What's new list and its lazy summary loader (`src/lib/whats-new.ts`: order,
 cache keys, bounded concurrency, LRU, retry after a failure),
-the markdown change marks (`src/lib/rehype-change-marks.ts`) and the
+the markdown change marks (`src/lib/rehype-change-marks.ts`), the `.docx`
+tree and its client-side sanitizing (`src/lib/docx-hast.ts`, including
+bookmark targets) and the
 server-backed history client (`src/lib/seen-store.ts`, against a fake
 `fetch`: the keepalive cap and the digest fallback, clear) and the git views'
 pure parts (`src/lib/git.ts`: Uncommitted rows and details, blame grouping

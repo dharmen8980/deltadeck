@@ -28,7 +28,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field
 
 from .app import SEEN_PREFIX
-from .paths import PathError
+from .paths import PathError, ext_of
 from .readers import CONTENT_MAX
 
 log = logging.getLogger("viewer")
@@ -297,6 +297,17 @@ def text_if_digest(real: str, digest: str) -> str | None:
     return text if hashlib.sha256(text.encode("utf-8")).hexdigest() == digest else None
 
 
+def docx_text_if_digest(real: str, digest: str) -> str | None:
+    """text_if_digest for a .docx: the UI snapshots its markdown (viewer.docx), not the zip."""
+    from .docx import DocxError, convert_cached  # local: docx pulls in mammoth on first use only
+
+    try:
+        text = convert_cached(real, images=False).markdown
+    except (DocxError, OSError):
+        return None
+    return text if hashlib.sha256(text.encode("utf-8")).hexdigest() == digest else None
+
+
 def seen_disabled_reason(settings) -> str | None:
     """Read-only mode never writes inside the browsed folder: no history if the data dir overlaps it."""
     if settings.root is None:
@@ -441,7 +452,10 @@ def register_seen_routes(app: FastAPI, db: SeenDB, current: Callable[[], object 
                     text = None
         elif b.text_sha256 is not None:
             # never store a text other than the one the user saw: no match drops the stale copy
-            text = None if st.st_size > CONTENT_MAX else await asyncio.to_thread(text_if_digest, r.real, b.text_sha256)
+            if ext_of(r.rel) == "docx":
+                text = await asyncio.to_thread(docx_text_if_digest, r.real, b.text_sha256)
+            else:
+                text = None if st.st_size > CONTENT_MAX else await asyncio.to_thread(text_if_digest, r.real, b.text_sha256)
         rec = await run(db.commit, inner.settings.root, r.rel, b.mtime, b.size, text)
         if isinstance(rec, JSONResponse):
             return rec

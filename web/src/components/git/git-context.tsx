@@ -2,7 +2,7 @@
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { api, ApiError, type FileInfo, type GitFileResponse, type GitStatusFile, type GitStatusResponse } from "@/lib/api";
-import { CONTENT_MAX, TEXT_KINDS } from "@/lib/change-rules";
+import { isMarkdownText, isTracked, trackedMax } from "@/lib/change-rules";
 import { diffVersions, normalizeText } from "@/lib/diff";
 import type { FileChangeState } from "@/components/changes/changes-context";
 
@@ -107,14 +107,14 @@ export function useGitCompare(path: string, file: FileInfo | null, active: boole
   const [data, setData] = useState<{ key: string; head: GitFileResponse; text: string | null } | null>(null);
   const [failed, setFailed] = useState<{ key: string; message: string } | null>(null);
   const [showDiff, setShowDiff] = useState(false);
-  const textual = file ? TEXT_KINDS.has(file.kind) && file.size <= CONTENT_MAX : true;
-  const tooLarge = Boolean(file && TEXT_KINDS.has(file.kind) && file.size > CONTENT_MAX);
+  const textual = file ? isTracked(file.kind) && file.size <= trackedMax(file.kind) : true;
+  const tooLarge = Boolean(file && isTracked(file.kind) && file.size > trackedMax(file.kind));
   const key = `${path}\u0000${version}`;
 
   useEffect(() => {
     if (!active || !path) return;
     const ctrl = new AbortController();
-    const current = file && textual ? api.content(path, ctrl.signal).then((r) => r.text) : Promise.resolve(file ? null : "");
+    const current = file && textual ? api.trackedText(path, file.kind, ctrl.signal) : Promise.resolve(file ? null : "");
     Promise.all([api.gitFile(path, ctrl.signal), current])
       .then(([head, text]) => {
         setData({ key, head, text });
@@ -137,7 +137,7 @@ export function useGitCompare(path: string, file: FileInfo | null, active: boole
   const baseText = head ? (blob ? blob.text : "") : null;
   const currentText = shown?.text ?? null;
   const same = baseText !== null && currentText !== null && normalizeText(baseText) === normalizeText(currentText);
-  const isMarkdown = file?.kind === "markdown";
+  const isMarkdown = Boolean(file && isMarkdownText(file.kind));
   const both = !same && baseText !== null && currentText !== null;
   const diffs = useMemo(
     () => (both ? diffVersions(baseText as string, currentText as string, isMarkdown) : null),

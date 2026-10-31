@@ -114,6 +114,7 @@ const KIND_LABELS: [FileKind, string][] = [
   ["json", "JSON"],
   ["csv", "CSV"],
   ["xlsx", "Spreadsheets"],
+  ["docx", "Word documents"],
   ["code", "Code"],
   ["text", "Text"],
   ["binary", "Other"],

@@ -16,7 +16,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { FileKindIcon } from "@/components/file-icon";
 import type { ChangeTracker } from "@/hooks/use-change-tracker";
 import { api, ApiError, formatRelative, type FileKind, type TreeResponse } from "@/lib/api";
-import { CONTENT_MAX, TEXT_KINDS } from "@/lib/change-rules";
+import { isMarkdownText, isTracked, trackedMax } from "@/lib/change-rules";
 import { diffVersions, summarizeChange, type ChangeSummary } from "@/lib/diff";
 import { viewerHref } from "@/lib/paths";
 import { cn } from "@/lib/utils";
@@ -89,16 +89,16 @@ export function useChangesSource(tree: TreeResponse | null, tracker: ChangeTrack
     const t = latest.current;
     if (!t) throw new Error("changes: not ready"); // not cached: retried
     const base = t.seen.get(item.path);
-    const markdown = item.kind === "markdown";
-    const textKind = TEXT_KINDS.has(item.kind);
-    const tooLarge = textKind && item.size > CONTENT_MAX;
+    const markdown = isMarkdownText(item.kind);
+    const textKind = isTracked(item.kind);
+    const tooLarge = textKind && item.size > trackedMax(item.kind);
     return loadFeedSummary({
       textKind,
       tooLarge,
       baseText: async () => (await t.getSnapshot(item.path, { throwOnError: true }))?.text ?? null,
       currentText: async () => {
         try {
-          return (await api.content(item.path)).text;
+          return await api.trackedText(item.path, item.kind);
         } catch (e) {
           // Network or server failure: rejected, so not cached and tried again later.
           if (!(e instanceof ApiError) || e.status === 0 || e.status >= 500) throw e;

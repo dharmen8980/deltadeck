@@ -5,7 +5,7 @@ import { CheckIcon, ChevronDownIcon, ChevronUpIcon, GitCommitHorizontalIcon, Git
 import { Button } from "@/components/ui/button";
 import { DiffView } from "@/components/diff/diff-view";
 import { formatRelative, type FileKind } from "@/lib/api";
-import { TEXT_KINDS } from "@/lib/change-rules";
+import { isMarkdownText, isTracked } from "@/lib/change-rules";
 import { sectionCount, summarizeChange } from "@/lib/diff";
 import { isTypingTarget } from "@/lib/keys";
 import type { GitCompareState } from "@/components/git/git-context";
@@ -37,8 +37,8 @@ function detail(state: FileChangeState, kind: FileKind): SummaryDetail {
   const { markdownDiff, lineDiff, baseText, currentText, sizeDelta, tooLarge } = state;
   return summaryDetail(
     summarizeChange({
-      markdown: kind === "markdown",
-      textKind: TEXT_KINDS.has(kind),
+      markdown: isMarkdownText(kind),
+      textKind: isTracked(kind),
       baseText,
       currentText,
       lineDiff,
@@ -111,7 +111,7 @@ export function ChangeBanner({
   // Something to jump to: highlighted blocks in the article, or the hunks of the open diff.
   const canJump =
     ((showDiff || git?.isDeleted) && (canDiff || Boolean(git?.isDeleted))) ||
-    (kind === "markdown" && markdownDiff !== null && sectionCount(markdownDiff) > 0);
+    (isMarkdownText(kind) && markdownDiff !== null && sectionCount(markdownDiff) > 0);
   const when = git
     ? git.head?.headCommit ?? null
     : baseViewedAt !== null

@@ -27,6 +27,15 @@ editing** (on Linux under File) turns on editing after a confirmation, is
 remembered, and restarts the server (unsaved editor changes are lost).
 Help → **Show Logs** / **Open Data Folder**.
 
+**macOS folder access.** The folder you open is yours to read, but anything
+outside it in Desktop, Documents or Downloads needs the app's privacy
+permission, e.g. git for a worktree whose main `.git` lives next to it. macOS
+asks once ("… would like to access files in your Desktop folder"; the dialog
+can open behind other windows) and holds git until you answer, so the git
+views appear after you allow it. An ad-hoc signed build is a new app to macOS
+each time it is rebuilt, so a locally built copy asks again after every build
+(System Settings → Privacy & Security → Files & Folders shows the grant).
+
 **Where things live** (`<userData>`): macOS `~/Library/Application Support/Local Docs Viewer`,
 Linux `~/.config/Local Docs Viewer`.
 
@@ -58,8 +67,8 @@ cd desktop && npm ci && npm run dist   # or dist:mac / dist:linux
 `npm run dist` builds `web/out` fresh (`npm ci && npm run build` in `web/`),
 freezes the server (`scripts/build-server.sh`: a uv-managed CPython, runtime
 deps only plus PyInstaller from the `build` dependency group (exact pins,
-hashes in `uv.lock`, `--locked`), playwright excluded, then a `--self-check` of the binary: app
-imports, SQLite FTS5, no playwright), compiles the shell (`tsc`) and runs
+hashes in `uv.lock`, `--locked`), playwright excluded, mammoth collected for `.docx`, then a `--self-check` of the binary: app
+imports, SQLite FTS5, a tiny `.docx` conversion, no playwright), compiles the shell (`tsc`) and runs
 electron-builder. Its `afterPack` hook (`scripts/after-pack.js`) sets the
 Electron fuses (RunAsNode, `NODE_OPTIONS` and `--inspect` off; embedded asar
 integrity validation and load-app-from-asar-only on; no extra `file:`

@@ -83,7 +83,7 @@ your last visit (5 min ago)", followed by what changed:
 
 | File | Detail |
 |---|---|
-| Markdown | `2 added · 1 edited · 1 removed` (top-level blocks: paragraphs, headings, lists, tables, code blocks), in the colours of the highlights |
+| Markdown, `.docx` | `2 added · 1 edited · 1 removed` (top-level blocks: paragraphs, headings, lists, tables, code blocks), in the colours of the highlights |
 | Other text, or markdown where only link/footnote definitions changed | `N changes, +A −R lines` |
 | Whitespace only | `only whitespace changed` |
 | Binary, image, or text without an earlier copy | `grew by 2.0 KB` / `shrank by …` / `size unchanged` |
@@ -104,7 +104,8 @@ your last visit (5 min ago)", followed by what changed:
 
 ## Markdown highlights
 
-In rendered markdown, changed blocks are marked in the left margin:
+In rendered markdown (and `.docx`, which is tracked as its converted markdown,
+see [Word documents](docx.md)), changed blocks are marked in the left margin:
 
 - green: a new block;
 - amber: a modified block;
@@ -124,7 +125,8 @@ browser; the server only stores what you last saw.
 
 - One small "seen" record per viewed file (mtime, size, time viewed). At most
   20,000 per root; the oldest go first.
-- A copy of the text as you last saw it, for text files up to 2 MB, so the diff
+- A copy of the text as you last saw it, for text files up to 2 MB (for a
+  `.docx`, its converted markdown, for files up to 20 MB), so the diff
   and the highlights work. The oldest copies (across all roots) are dropped
   beyond 1,000 copies or 64 M characters in total. If the disk is full, older
   copies are dropped and the newest record is kept without its text.

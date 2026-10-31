@@ -34,6 +34,7 @@ import { BinaryViewer } from "@/components/viewers/binary-viewer";
 import { CodeViewer } from "@/components/viewers/code-viewer";
 import { useAsync, ViewerError, ViewerLoading, type AsyncState, type ViewerProps } from "@/components/viewers/common";
 import { CsvViewer } from "@/components/viewers/csv-viewer";
+import { DocxViewer } from "@/components/viewers/docx-viewer";
 import { ImageViewer } from "@/components/viewers/image-viewer";
 import { JsonViewer } from "@/components/viewers/json-viewer";
 import { MarkdownViewer } from "@/components/viewers/markdown-viewer";
@@ -67,6 +68,7 @@ const VIEWERS: Record<FileKind, React.ComponentType<ViewerProps>> = {
   json: JsonViewer,
   csv: CsvViewer,
   xlsx: XlsxViewer,
+  docx: DocxViewer,
   code: CodeViewer,
   text: TextViewer,
   binary: BinaryViewer,
@@ -549,7 +551,7 @@ function Shell({ initialConfig }: { initialConfig: AppConfig | null }) {
     (t: SearchTarget) => {
       if (t.match && (t.kind === "text" || t.kind === "code" || t.kind === "json")) {
         navigate(t.path, { hash: `L${t.match.line}` });
-      } else if (t.match && (t.kind === "markdown" || t.kind === "mermaid")) {
+      } else if (t.match && (t.kind === "markdown" || t.kind === "mermaid" || t.kind === "docx")) {
         navigate(t.path, { hl: t.query, hll: t.match.text.trim().slice(0, 200) });
       } else {
         navigate(t.path);

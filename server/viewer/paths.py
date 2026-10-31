@@ -23,6 +23,7 @@ for _kind, _exts in {
     "json": "json",
     "csv": "csv tsv",
     "xlsx": "xlsx",
+    "docx": "docx",
     "code": "py sh bash zsh js mjs ts tsx yaml yml toml sql ini cfg html css",
     "text": "log out txt jsonl ndjson",
 }.items():

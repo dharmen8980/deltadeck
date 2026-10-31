@@ -379,8 +379,8 @@ export function FileHeader({
             )}
           </IconButton>
         ) : null}
-        {file && (file.kind === "markdown" || file.kind === "mermaid") ? <PdfMenu key={file.path} file={file} /> : null}
-        {file?.kind === "markdown" ? (
+        {file && (file.kind === "markdown" || file.kind === "mermaid" || file.kind === "docx") ? <PdfMenu key={file.path} file={file} /> : null}
+        {file?.kind === "markdown" || file?.kind === "docx" ? (
           <IconButton label="Print" onClick={() => window.print()}>
             <PrinterIcon />
           </IconButton>

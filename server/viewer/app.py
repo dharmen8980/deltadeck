@@ -20,6 +20,7 @@ from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from . import __version__
 from .config import Settings
+from .docx import DOCX_MAX, DocxError, convert_cached
 from .edit import Editor
 from .edit_routes import DEV_UI_PORT, MAX_UPLOAD_FILES, EditGate, is_edit_path, register_edit_routes
 from .git import GitLink, register_git_routes
@@ -360,6 +361,34 @@ def create_app(settings: Settings) -> FastAPI:
         except Exception as e:  # corrupt workbook
             return JSONResponse({"detail": f"could not read workbook: {type(e).__name__}"}, status_code=422)
 
+    @get("/api/docx")
+    def api_docx(path: str | None = None, fmt: str = Query("html", alias="format")):
+        """A .docx converted once (cached): sanitized HTML for display plus markdown (search, change
+        tracking). format=markdown skips the HTML and the images (the change tracker's fetch)."""
+        try:
+            r, st = guard.resolve_file(path)
+        except PathError as e:
+            return _err(e)
+        if ext_of(r.rel) != "docx":
+            return JSONResponse({"detail": "not a .docx file"}, status_code=400)
+        if fmt not in ("html", "markdown"):
+            return JSONResponse({"detail": "format must be html or markdown"}, status_code=400)
+        if st.st_size > DOCX_MAX:
+            return JSONResponse({"detail": f"document larger than {DOCX_MAX // (1024 * 1024)} MB",
+                                 "size": st.st_size}, status_code=413)
+        try:
+            res = convert_cached(r.real, images=fmt == "html", st=st)
+        except DocxError as e:
+            return JSONResponse({"detail": e.detail}, status_code=e.status)
+        except OSError:
+            return JSONResponse({"detail": "could not read the file"}, status_code=404)
+        out = {"path": r.rel, "markdown": res.markdown, "blocks": res.blocks, "warnings": res.warnings,
+               "truncated": res.truncated, "images": res.images, "images_dropped": res.images_dropped,
+               "size": st.st_size, "mtime": st.st_mtime_ns / 1e9}
+        if fmt == "html":
+            out["html"] = res.html
+        return out
+
     @get("/api/search")
     def api_search(q: str = "", folder: str = "", types: str = "", limit: int = 50):
         return index.search(q, folder=folder, types=types, limit=limit)
@@ -405,14 +434,15 @@ def create_app(settings: Settings) -> FastAPI:
         except PathError as e:
             return _err(e)
         name = os.path.basename(r.rel)
-        if kind_of(name, r.real) not in ("markdown", "mermaid"):
-            return JSONResponse({"detail": "PDF export is only available for markdown and mermaid files"},
+        kind = kind_of(name, r.real)
+        if kind not in ("markdown", "mermaid", "docx"):
+            return JSONResponse({"detail": "PDF export is only available for markdown, mermaid and docx files"},
                                 status_code=400)
         paper, orientation = paper.lower(), orientation.lower()
         if paper not in PAPERS or orientation not in ORIENTATIONS or toc not in ("0", "1", "true", "false"):
             return JSONResponse({"detail": "paper must be a4|letter, orientation portrait|landscape, toc 0|1"},
                                 status_code=400)
-        if st.st_size > CONTENT_MAX:
+        if st.st_size > (DOCX_MAX if kind == "docx" else CONTENT_MAX):
             return JSONResponse({"detail": "file too large to export", "size": st.st_size}, status_code=413)
         if not os.path.isfile(os.path.join(settings.ui_dir, "print.html")):
             return JSONResponse({"detail": "UI build not found; run 'npm run build' in web/"}, status_code=503)

@@ -19,6 +19,10 @@ What it does:
   - `.mmd` diagrams and source code with line anchors.
   - JSON as a tree or as source.
   - CSV and xlsx as sortable tables.
+  - Word `.docx`, view-only: converted on the server (mammoth) to sanitized
+    HTML in the markdown typography, with a table of contents, search,
+    change highlights and PDF export. Layout and styling are not kept; see
+    [Word documents](docs/docx.md).
   - Images and PDFs.
   - Large logs, loaded in chunks with real line numbers. The whole file is
     never loaded.
@@ -41,7 +45,7 @@ What it does:
   Nothing is ever written to the repository; see [Git](docs/git.md).
 - Deep links (`/?p=<path>#<heading>` or `#L<line>`), light/dark themes and a
   print stylesheet for markdown.
-- **Download PDF** for markdown and `.mmd` files: a properly paginated PDF
+- **Download PDF** for markdown, `.mmd` and `.docx` files: a properly paginated PDF
   rendered by headless Google Chrome on the server (see [PDF export](docs/pdf-export.md)).
 - Opt-in editing (`--allow-edit`): a CodeMirror editor with live preview, file
   management (new, rename, move, duplicate, upload, delete to Trash), version
@@ -74,7 +78,8 @@ uv run viewer --root ~/notes   # or start on a given folder
 | [Editing](docs/editing.md) | `--allow-edit`, history, trash, the recovery data dir, backups, limits, how writes are protected |
 | [Changes](docs/changes.md) | "Changed since you last looked": dots, the filter, the What's new feed, the banner, highlights, where the history is kept |
 | [Git](docs/git.md) | Read-only git views: since last commit, the Uncommitted list, blame; which git is used; `/api/git/*` |
-| [PDF export](docs/pdf-export.md) | How **Download PDF** renders markdown and mermaid |
+| [Word documents](docs/docx.md) | How `.docx` files are converted and shown, `/api/docx`, its limits |
+| [PDF export](docs/pdf-export.md) | How **Download PDF** renders markdown, mermaid and `.docx` |
 | [Desktop app](docs/desktop.md) | Installing, first launch, data and logs, building the app, desktop mode |
 | [Security model](docs/security.md) | What the server allows, refuses and why |
 | [Known limits](docs/known-limits.md) | Things that do not work (yet) |

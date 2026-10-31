@@ -5,7 +5,8 @@
 #   (desktop/build/pyenv) with runtime deps only (--no-dev: no pytest/httpx) plus the `build`
 #   group (PyInstaller + hooks-contrib, exact pins with hashes in uv.lock; --locked: no re-resolve)
 # - playwright (and its ~100 MB node driver) excluded: desktop mode renders PDFs in Electron
-# - checked afterwards with the hidden `--self-check` (app imports, FTS5, no playwright)
+# - mammoth (.docx, imported lazily) collected explicitly
+# - checked afterwards with the hidden `--self-check` (app imports, FTS5, a .docx conversion, no playwright)
 # PyInstaller does not cross-compile: the build matches this machine's OS/arch.
 set -euo pipefail
 
@@ -27,6 +28,7 @@ uv run --managed-python --python "$PY" --no-dev --group build --locked \
     --paths server \
     --collect-submodules viewer \
     --collect-submodules uvicorn \
+    --collect-submodules mammoth \
     --hidden-import sqlite3 --hidden-import _sqlite3 \
     --exclude-module playwright --exclude-module greenlet --exclude-module pyee \
     --exclude-module pytest --exclude-module _pytest --exclude-module httpx \

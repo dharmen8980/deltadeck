@@ -4,7 +4,7 @@ import { createContext, useCallback, useContext, useEffect, useLayoutEffect, use
 import { toast } from "sonner";
 import type { ChangeTracker } from "@/hooks/use-change-tracker";
 import { api, ApiError, type FileInfo } from "@/lib/api";
-import { CONTENT_MAX, isChangedSince, TEXT_KINDS } from "@/lib/change-rules";
+import { isChangedSince, isMarkdownText, isTracked, trackedMax } from "@/lib/change-rules";
 import { basename } from "@/lib/paths";
 import { diffVersions, normalizeText, type LineDiff, type MarkdownBlockDiff } from "@/lib/diff";
 
@@ -24,11 +24,11 @@ export interface FileChangeState {
   currentText: string | null;
   /** current.size - base.size */
   sizeDelta: number;
-  /** text-like but over the fetch limit (CONTENT_MAX): not compared */
+  /** text-like but over the fetch limit (change-rules trackedMax): not compared */
   tooLarge: boolean;
   /** only when changed and both texts are known; null also when the diff gave up */
   lineDiff: LineDiff | null;
-  /** markdown only */
+  /** markdown (and .docx, as its markdown) only */
   markdownDiff: MarkdownBlockDiff | null;
   showDiff: boolean;
   setShowDiff(on: boolean): void;
@@ -84,8 +84,9 @@ export function useFileChanges(file: FileInfo | null): FileChangeState | null {
   const mtime = file?.mtime ?? 0;
   const size = file?.size ?? 0;
   const ready = Boolean(tracker?.ready);
-  const textual = Boolean(file && TEXT_KINDS.has(file.kind) && file.size <= CONTENT_MAX);
-  const tooLarge = Boolean(file && TEXT_KINDS.has(file.kind) && file.size > CONTENT_MAX);
+  const textual = Boolean(file && isTracked(file.kind) && file.size <= trackedMax(file.kind));
+  const tooLarge = Boolean(file && isTracked(file.kind) && file.size > trackedMax(file.kind));
+  const kind = file?.kind ?? "binary";
   const key = file ? `${path}:${mtime}:${size}` : "";
   const baseObj = typeof base === "object" ? base : null;
 
@@ -155,8 +156,8 @@ export function useFileChanges(file: FileInfo | null): FileChangeState | null {
     const run = () => {
       lastFetchAt.current = Date.now();
       api
-        .content(path, ctrl.signal)
-        .then((r) => !ctrl.signal.aborted && setFetched({ key, mtime, size, text: r.text }))
+        .trackedText(path, kind, ctrl.signal)
+        .then((text) => !ctrl.signal.aborted && setFetched({ key, mtime, size, text }))
         .catch((e) => {
           if (ctrl.signal.aborted || (e as Error)?.name === "AbortError") return;
           // 413 (too large) and other failures: no text, the banner works from size/mtime.
@@ -174,7 +175,7 @@ export function useFileChanges(file: FileInfo | null): FileChangeState | null {
       if (retryTimer) clearTimeout(retryTimer);
       ctrl.abort();
     };
-  }, [needFetch, path, key, mtime, size, fetched, retry]);
+  }, [needFetch, path, kind, key, mtime, size, fetched, retry]);
 
   // While a newer version loads, keep showing the last resolved one.
   const current: Current | null = immediate ?? fetched;
@@ -214,7 +215,7 @@ export function useFileChanges(file: FileInfo | null): FileChangeState | null {
 
   // 5. Diffs (pure, so StrictMode double memo calls are harmless), time-boxed (diffVersions).
   const both = changed && baseText !== null && currentText !== null;
-  const isMarkdown = file?.kind === "markdown";
+  const isMarkdown = isMarkdownText(kind);
   const diffs = useMemo(
     () => (both ? diffVersions(baseText as string, currentText as string, isMarkdown) : null),
     [both, baseText, currentText, isMarkdown],
