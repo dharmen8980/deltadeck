@@ -55,6 +55,41 @@ is not loopback. `next dev` sends the same CSP, `Referrer-Policy` and `nosniff`
 headers as production, with `'unsafe-eval'` and a same-host websocket added
 because React refresh and HMR need them.
 
+## Idle cost
+
+These numbers come from an Apple Silicon Mac. Idle CPU is the server process's
+CPU time over 120 s, with one live-update stream open unless the scenario says
+otherwise. The synthetic tree has 50,000 files in 5,611 folders.
+
+| Scenario | Before (rescan every 10 s) | After |
+|---|---|---|
+| `docs/` (11 files), idle | 0.46 % | 0.29 % |
+| `~/Desktop` (64k files, 13.7k folders), idle | 12.3 % | 0.35 % (plus about 0.1 % from the backstop timers on average) |
+| Synthetic tree, idle | 8.3 % | 0.33 % |
+| Synthetic tree, watcher failing on every start, idle | n/a | 0.43 % |
+| Synthetic tree, watcher silently dead, idle | 7.9 % | 1.4 % (directory pass every 20 s, full pass every 60 s) |
+| Create / edit / rename / delete | 0.12 / 0.15 / 0.89 / 0.12 s | 0.14 / 0.14 / 0.14 / 0.15 s (the first event after startup takes about 1.7 s) |
+| Folder of 20 files moved in / folder renamed | 0.13 / 0.17 s | 0.15 / 0.13 s |
+| 5k files created / then edited (burst) | 0.52 / 23.2 s (24.7 s CPU) | 0.52 / 0.60 s (0.63 s CPU, plus the follow-up full pass) |
+| Create / edit, watcher failing | n/a | 30 / 120 s (bounds 30 s and 5 min) |
+| Create / edit, watcher silently dead | 10.8 / 10.9 s | 6 / 40 s (with 20 s and 60 s timers; the defaults bound them at 5 min and 30 min) |
+| Volume holding the root ejected / remounted after an edit made elsewhere (disk image) | not seen / 10 s | 0.6 / 0.7 s |
+
+Most of the remaining floor is not the viewer's: a bare uvicorn server costs
+about 0.2 % (its main loop wakes every 0.1 s), and `watchfiles` about 0.05 %
+(it checks for events every 100 ms; that step adds up to 0.1 s of latency).
+
+Cost of one backstop pass on `~/Desktop`:
+
+| Pass | CPU time |
+|---|---|
+| Directory pass | 0.09 to 0.11 s (each changed directory is listed once) |
+| Full pass | 1.1 to 1.9 s, spread over about 2.2 s (utility QoS and the pauses keep it near half a core) |
+| Startup scan | 3.1 to 3.5 s |
+
+A directory pass over a folder of 20,000 files after one new file costs about
+0.07 s (it was 2.4 s when every file was rescanned on its own).
+
 ## Tests
 
 ```sh
@@ -64,6 +99,33 @@ uv run pytest -q
 The tests use pytest `tmp_path` fixtures only and never touch the real root.
 They cover path safety, the deny list, symlinks, large-file chunking, search,
 security headers and live updates (watcher, reconcile, renames, SSE).
+`test_reconcile.py` covers change detection without polling:
+- updates driven by the watcher alone, with every backstop timer off;
+- the watcher restarting after an error or an unexpected end, and asking for a
+  full pass each time;
+- a large batch asking for a directory pass and then a full one (a possible
+  overflow, at most one per minute), a root event asking for a directory pass
+  rather than a full one, and an unknown path asking for a full pass;
+- small batches not resolving every path;
+- the backstop timers, `0` turning them off, and the shorter timers while the
+  watcher is down (injected clocks, no sleeps);
+- wake and clock jumps (a directory pass on a local volume, a full pass on a
+  network one), and the root's volume going away and coming back;
+- pausing without clients, resuming on an HTTP request or a live-update
+  stream, and `--rescan-when-idle`;
+- the directory pass, which catches creates, deletes, renames, mkdir plus move,
+  directory moves and removed trees, re-lists only the changed directories,
+  always re-lists racy ones but trusts far-future ones, respects deny and
+  ignore, misses an in-place edit that the full pass catches, and lists a
+  20,000-file directory once (one create in it costs well under 0.5 s);
+- case-only renames of a file and a folder leaving no duplicate, whether the
+  watcher, a directory pass or a full pass sees them;
+- a cancelled pass (shutdown, folder switch) committing nothing;
+- the full pass matching a fresh scan;
+- the one-regex hidden-name test matching `is_hidden`;
+- 5000 file scopes applied in well under 3 s;
+- the network-volume defaults, including Linux `fuse.*` mounts;
+- the CLI and env options.
 `test_pdf.py` checks that `/api/pdf` refuses traversal, denied and
 non-markdown paths and cross-site requests, that the request-blocking route
 and WebSocket handlers abort external URLs, the idle-close deadline and the
@@ -89,7 +151,25 @@ renames, namespacing by root and refusal of a stale root after a switch,
 403) and no-folder mode, the token / Origin / Sec-Fetch-Site / Host /
 content-type gate and body limit, path traversal and denied names, the
 data-dir overlap and unwritable data dir turning it off, and the `seen` SSE
-event. `test_git.py` (skipped when git is missing) builds real temporary
+event. `test_search_index.py` covers the on-disk search index: contentless
+insert / update / delete / rename (with and without `contentless_delete`, and
+the tombstone rebuild), snippets read from disk (diacritics, NFD text, files
+changed or deleted since indexing, `.docx` from the cache and its time
+budget), persistence and an incremental restart that reads only changed files,
+schema / tokenizer / root / mode mismatch and corrupt, foreign, truncated or
+symlinked databases being rebuilt, caps with the status in `/api/search` and
+the deterministic selection, the CLI / env options, a full disk, the data dir
+inside the root (temp file, nothing written in the root) or the temp dir inside
+it (memory), two roots sharing a data dir, the same root opened twice (temp
+file), `stop()` cleanup, pruning, sweeping abandoned temporary indexes, and denied or symlinked hits giving no
+snippet. Also: damaged FTS pages found on restart (quick_check) or by a query
+(one reset, then a rebuild), unreadable files and failed `.docx` conversions
+taking no cap slot and not being read again until they change (also across a
+restart), changes under a cap applied without a full re-plan (and the result
+matching `plan_selection`), re-plans running throttled on their own thread,
+a failed write retried by a later change, the old-SQLite tombstone rebuild by
+dead bytes in the background, a hit whose file changed on disk before the
+watcher saw it, and a `.lock` file unlinked between open and flock. `test_git.py` (skipped when git is missing) builds real temporary
 repositories: status with M/A/D/R/?? and line counts, denied and ignored names
 hidden, a root in a subfolder of the repository, the last commit's version
 (unchanged, new, deleted, renamed, binary), a denied file in history, a rename
@@ -133,5 +213,51 @@ bookmark targets) and the
 server-backed history client (`src/lib/seen-store.ts`, against a fake
 `fetch`: the keepalive cap and the digest fallback, clear) and the git views'
 pure parts (`src/lib/git.ts`: Uncommitted rows and details, blame grouping
-and chunk merging). CI runs them
+and chunk merging), the search dialog's coverage notice
+(`src/lib/search-coverage.ts`), and the code outline (`src/lib/outline/`: one test file
+per language against realistic samples in `web/test/fixtures/outline/`,
+asserting exact names, kinds, lines and nesting; plus the loader, the size
+cap, the time budget, abort, the cache, the active-symbol search, the worker's
+one-budget run (`run.ts`) and the SCSS / LESS preprocessing staying linear).
+The code and text change marks (`src/lib/line-marks.ts`) are covered too:
+added, modified and removed lines at the start, middle and end, CRLF and the
+final newline, whitespace-only edits, the word-highlight caps and time budget,
+the cap on removed lines kept inline, which outline symbols hold a change
+(including a Python body's last line removed and the last function of a file
+removed), the changes in an unloaded part of a large file, and the
+whitespace-only summary with its line counts.
+The panel sizes (`src/lib/panel-size.ts`, `test/panel-size.test.ts`): clamping
+to the limits and to a share of the window, drag direction per edge, the
+keyboard steps, Home / End / Enter, and parsing saved widths and the reading width.
+Find in the file (`src/lib/find/`, `test/find.test.ts`) is covered too: query
+compiling (match case, whole word, regex and its errors), the match cap and
+time budget, the worker's hard timeout, offsets to lines and to table cells,
+next / previous with wrap-around, the counter, the shortcuts, the selection and
+search-term seeds, the desktop menu's echo filter and the viewer registry.
+The worker itself (`worker.ts`) only runs in a browser; the tests use the
+main-thread fallback. CI runs them
 in the desktop-release workflow (`package.json` declares `engines.node >=23.6`).
+
+## Search index memory
+
+Measured on macOS (Apple silicon, SQLite 3.53) with `/usr/bin/time -l`, before
+(in-memory FTS5 with the text stored) and after (on-disk contentless index,
+default caps). Footprint is the steady-state process footprint after indexing.
+
+| Folder | Version | Index build | Restart | Peak footprint | Steady footprint | Index on disk |
+|---|---|---|---|---|---|---|
+| `docs/` (small) | before | 0.3 s | 0.3 s | 42 MB | 42 MB | none |
+| `docs/` (small) | after | 0.5 s | incremental | 41 MB | 42 MB | 0.1 MB |
+| ~/Desktop, 64k files (55k indexable, 1.3 GB) | before | 28 s | 25 s (full) | 2415 MB | 2409 MB | none |
+| same | after (50 000 files indexed) | 32 s | 3.7 s | 284 MB | 283 MB cold, 111 MB after restart | 291 MB |
+| same | after review fixes (all 55 218 indexed, 100k cap) | 34 s | 0.5 s after the tree scan | 239 MB RSS | 158 MB cold, 107-123 MB after restart | 313 MB |
+| synthetic, 60k files, 2.8 GB | before | 125 s | 125 s (full) | 6078 MB | 6076 MB | none |
+| same | after (47 798 files, 2 GB cap) | 113 s | 2.1 s | 130 MB | 116 MB cold, 95 MB after restart | 982 MB |
+| synthetic, 45k files, 3.1 GB | after review fixes (33 780 files, 2 GB cap) | 63 s | 0.1 s after the tree scan | 134 MB RSS | 103 MB cold, 83 MB after restart | 695 MB |
+
+The cold-build footprint above a restart's is allocator retention (freed
+memory macOS keeps), not index data. Query latency stayed in the same range
+(tens of ms; up to about 200 ms for very common words, which read 50 hit files
+for snippets). With a cap in force a file change costs about 15 ms of CPU
+(the full re-plan, about 70-100 ms, runs in the background at most every
+5 s); the write-ahead log peaked at 19 MB during the synthetic build.

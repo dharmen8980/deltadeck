@@ -17,6 +17,10 @@ What it does:
   - Markdown: GFM, a table of contents, mermaid diagrams, shiki highlighting,
     and relative links and images that resolve inside the folder.
   - `.mmd` diagrams and source code with line anchors.
+  - A code outline next to source code (Python, JavaScript / TypeScript,
+    CSS / SCSS / LESS, HTML, Java, C#, shell): classes, functions, methods,
+    selectors, headings and so on, with jump-to-line; see [Code
+    outline](docs/outline.md).
   - JSON as a tree or as source.
   - CSV and xlsx as sortable tables.
   - Word `.docx`, view-only: converted on the server (mammoth) to sanitized
@@ -26,7 +30,7 @@ What it does:
   - Images and PDFs.
   - Large logs, loaded in chunks with real line numbers. The whole file is
     never loaded.
-- Full-text search (SQLite FTS5, in memory) with folder and type filters.
+- Full-text search (SQLite FTS5, a contentless index on disk) with folder and type filters.
   Match lines are ranked (whole phrase, then most distinct terms, then
   whole-word hits). Choosing a markdown/mermaid match opens
   `/?p=...&hl=<query>&hll=<match line>` and scrolls to the rendered block that
@@ -43,8 +47,15 @@ What it does:
   changed since the last commit (same banner, highlights and diff), an
   **Uncommitted** list in What's new with M/A/D/R/?? and +/- lines, and blame.
   Nothing is ever written to the repository; see [Git](docs/git.md).
+- Find in the open file (Cmd/Ctrl+F, also in the desktop Edit menu): live
+  matches with match case, whole word and regex, across the whole text of large
+  files, every CSV cell and rendered markdown; see [Find in the file](docs/find.md).
 - Deep links (`/?p=<path>#<heading>` or `#L<line>`), light/dark themes and a
   print stylesheet for markdown.
+- Resizable panels: drag (or use the arrow keys on) the edge of the file sidebar
+  and of the contents / outline panel; double-click resets. A **Reading width**
+  menu (Narrow, Default, Wide, Full width) sets the markdown and `.docx` column.
+  Both are remembered; see [Layout](docs/layout.md).
 - **Download PDF** for markdown, `.mmd` and `.docx` files: a properly paginated PDF
   rendered by headless Google Chrome on the server (see [PDF export](docs/pdf-export.md)).
 - Opt-in editing (`--allow-edit`): a CodeMirror editor with live preview, file
@@ -78,6 +89,9 @@ uv run viewer --root ~/notes   # or start on a given folder
 | [Editing](docs/editing.md) | `--allow-edit`, history, trash, the recovery data dir, backups, limits, how writes are protected |
 | [Changes](docs/changes.md) | "Changed since you last looked": dots, the filter, the What's new feed, the banner, highlights, where the history is kept |
 | [Git](docs/git.md) | Read-only git views: since last commit, the Uncommitted list, blame; which git is used; `/api/git/*` |
+| [Find in the file](docs/find.md) | Cmd/Ctrl+F: shortcuts, what each viewer searches, the editor's search panel, limits |
+| [Code outline](docs/outline.md) | The symbols panel for source code: languages, what is listed, how and when it is computed, bundle size |
+| [Layout](docs/layout.md) | Resizing the sidebar and the contents / outline panel, keyboard, reading width, where it is saved |
 | [Word documents](docs/docx.md) | How `.docx` files are converted and shown, `/api/docx`, its limits |
 | [PDF export](docs/pdf-export.md) | How **Download PDF** renders markdown, mermaid and `.docx` |
 | [Desktop app](docs/desktop.md) | Installing, first launch, data and logs, building the app, desktop mode |

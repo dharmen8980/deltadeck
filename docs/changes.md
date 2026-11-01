@@ -84,14 +84,16 @@ your last visit (5 min ago)", followed by what changed:
 | File | Detail |
 |---|---|
 | Markdown, `.docx` | `2 added · 1 edited · 1 removed` (top-level blocks: paragraphs, headings, lists, tables, code blocks), in the colours of the highlights |
-| Other text, or markdown where only link/footnote definitions changed | `N changes, +A −R lines` |
-| Whitespace only | `only whitespace changed` |
+| Code, text, JSON | `N changes, +A −R lines`, in the colours of the highlights (green added, amber edited, red removed lines) |
+| Other text (CSV), or markdown where only link/footnote definitions changed | `N changes, +A −R lines` |
+| Whitespace only | `only whitespace changed`; for code, text and JSON followed by the line counts, as those lines are marked too (indentation matters in code) |
 | Binary, image, or text without an earlier copy | `grew by 2.0 KB` / `shrank by …` / `size unchanged` |
 | Text over 2 MB | `grew by 3.1 MB · too large to compare` |
 
 - Click the detail to jump to the first change; the up/down arrows (or the
   `n` / `p` keys) go to the next and previous change, in the article or in the
-  diff.
+  diff. Where the view has no marks (the JSON **Tree** tab), they open **Show
+  changes** instead.
 - **Show changes** opens a unified line diff (the last viewed version against
   the current one) in place of the file. Edited lines show the changed words
   highlighted. Click a "N unchanged lines" row to show those lines. **Hide
@@ -113,6 +115,49 @@ see [Word documents](docx.md)), changed blocks are marked in the left margin:
   "… at the end" after the last block).
 
 The highlights do not appear in print or in the PDF export.
+
+## Code and text highlights
+
+Code, plain text and JSON files get the same treatment as markdown, by line,
+in the normal view (no need to open **Show changes**):
+
+- green bar and tint: an added line;
+- amber bar and tint: a modified line, with the changed words highlighted
+  more strongly;
+- a dashed red line between two lines (or after the last one) where lines
+  were removed. Its `−N` button (click, or Enter / Space) shows the removed
+  lines in place, with their old line numbers; click again to hide them.
+  At most 500 lines are kept per removal; **Show changes** has them all.
+
+Details:
+
+- Within one run of changes, the first removed line pairs with the first added
+  line as "modified", the second with the second, and so on; extra added lines
+  are "added", extra removed ones a removal marker.
+- The banner's `n` / `p` and arrows go from one run of changes to the next,
+  as in markdown. **Mark as seen** clears the marks, and they follow live
+  updates while the file is open (for files up to about 256 KB, old and new
+  version together, the new marks arrive with the new text, without a gap).
+- The [code outline](outline.md) puts an amber dot on every symbol that
+  contains a change (a changed line, or removed lines inside it or at the end
+  of its body). Screen readers hear "changed since you last viewed it".
+- Removed lines, labels and markers are never copied with the code, and do not
+  shift the lines when they appear. Small files are compared as they render;
+  larger ones after the file is on screen (the banner keeps its last summary
+  meanwhile).
+- Files over 300 KB (no syntax highlighting) get the bars and removal markers
+  only: no tint, no changed words, and the removed lines cannot be opened.
+  Text files over 256 KB load in parts (the start and the end first): the
+  parts around the first four changes elsewhere are loaded right away, so they
+  are marked. Any further changes are summed up on the "not loaded" bar
+  between the parts ("3 changes in these lines: load"). `n` / `p` stop there,
+  and the button loads the part with the first of them.
+- JSON: the marks are on the **Source** tab, which opens by default when the
+  file changed (once per visit: **Mark as seen**, or a live change while you
+  read the **Tree** tab, does not switch tabs). With pretty-print on, both versions are compared pretty-printed,
+  so a reformatted file shows only real changes.
+- CSV files (shown as a table) and mermaid diagrams get the banner and **Show
+  changes**, but no marks in the view.
 
 ## Where the data lives
 

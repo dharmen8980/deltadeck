@@ -9,8 +9,9 @@
   and `POST /api/seen/*`, see [below](#the-apiseen-endpoints)). Without `--allow-edit` the server never writes inside the root,
   and `/api/edit/*` returns 403. With it, writes are limited to `/api/edit/*`
   and protected as described in [How writes are protected](editing.md#how-writes-are-protected).
-  The search index lives in an in-memory SQLite database. The git views run
-  only read-only git commands, locked down as described [below](#git).
+  The search index lives in the data dir (see [Search index](#search-index)).
+  The git views run only read-only git commands, locked down as described
+  [below](#git).
 - **One path check for every endpoint** (`PathGuard.resolve`). It rejects empty
   paths, absolute paths and NUL bytes. It joins the path to the root, applies
   realpath, and requires the result to stay inside the root. It then applies the
@@ -106,6 +107,33 @@ filter menu.
 - Writes are announced on the live-update stream as a `seen` event
   (`{"paths", "client"}`, no file contents) to every tab of the same folder;
   `clear` sends `{"paths": [], "client", "cleared": true}`.
+
+## Search index
+
+- **What is stored.** `<data dir>/search/<key>.sqlite3` (mode 0600, data dir
+  0700 when the server creates it) persists, per folder, every indexed file's
+  path, size, mtime and extension and the FTS5 tokens of its text (lower-cased
+  words without accents, with their positions). It is contentless, so the text
+  itself is not stored, but the words of a file and their order can largely be
+  reconstructed from it: treat it like the files. Denied and ignored files are
+  never indexed. Tokens of a file that changes or is deleted are removed with
+  it (on SQLite before 3.43 they are only unlinked and purged by a rebuild once
+  the dead rows outnumber the live ones or their files add up to 64 MB and
+  more than the live ones). The paths, sizes and mtimes of files whose
+  conversion failed (for example an Office `~$` lock file) are kept too, so
+  they are not converted again on every start.
+- **Removing it.** Deleting the file (or `<data dir>/search/`) removes
+  everything; forgetting a folder or letting it drop off the recent list
+  deletes its index. **Clear history…** clears the changes history only, not
+  the search index.
+- **Never inside the folder.** When the data dir overlaps the folder, the
+  index is a temporary file in the OS temp dir, deleted on stop (in memory if
+  the temp dir is inside the folder). Index files are created with
+  `O_NOFOLLOW`, and a symlink in their place is replaced, not followed.
+- **Snippets** are made at query time by reading the hit files through the same
+  `PathGuard.resolve_file` check as `/api/content` (up to the search size
+  limit), so a file denied, moved out of the root or replaced by a symlink
+  after it was indexed gives no snippet and is not listed.
 
 ## Git
 

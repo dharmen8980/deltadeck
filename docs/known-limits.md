@@ -1,7 +1,26 @@
 # Known limits
 
-- Live updates come from `watchfiles` plus a full stat rescan every 10 s, which
-  catches events FSEvents coalesces or misses.
+- Live updates come from `watchfiles`. There is no periodic rescan. Backstop
+  passes run after a watcher restart, failure or large burst, after wake from
+  sleep, and on slow timers (see [Change detection](configuration.md#change-detection)).
+  A change the watcher misses therefore shows up late:
+  - a create, delete or rename within 5 min (1 min on a network volume, 30 s
+    while the watcher is down);
+  - an in-place edit within 30 min (10 min on a network volume, 5 min while the
+    watcher is down).
+  - The timers pause while no browser is connected. The pass runs when one
+    connects. A hidden but open desktop window still counts as connected.
+  - A watcher that stops reporting without raising an error looks healthy. It
+    is covered only by the timers above.
+  - `watchfiles` does not pass on the backend's "events were dropped, rescan"
+    signal (FSEvents `MustScanSubDirs`, inotify queue overflow; Linux queues
+    16384 events by default). A burst of 2000 or more paths is therefore
+    treated as a possible overflow and followed by a full pass within 10 s to
+    1 min. An overflow that delivers no large batch at all is covered only by
+    the timers.
+  - On a local volume a wake from sleep gets a directory pass, not a full one:
+    nothing on it changes while the machine sleeps. A volume ejected and
+    remounted (also with the same root path) gets a full pass within a minute.
 - Renames are inferred within one batch of changes, in two ways:
   - The same size, mtime and basename means a move, which includes folder
     renames.
@@ -16,6 +35,26 @@
 - Search offsets are computed from the decoded text, so they can be slightly off
   in files with invalid UTF-8. Files larger than the search limit are not
   content-indexed (their names are still searchable).
+- Content search covers at most 100 000 files and 2 GB of files by default
+  (`--search-max-files`, `--search-max-total-mb`); over a cap documents come
+  first, then other text, code and data, shallower and smaller files first (see
+  [Search index](configuration.md#search-index)). The dialog then says "Search
+  covers N of M files - limit reached" (its tooltip names the options, except
+  in the desktop app, which has no setting for them). Over a cap, a change
+  that may alter which files are chosen takes effect within about 5 s (a
+  background re-plan). A file that changed after it was
+  indexed is matched on its old words until it is reindexed (a second or so;
+  its snippet already shows the new text, and a hit with no matching line left
+  is dropped, also before the watcher has seen the change). Files that cannot
+  be read or converted are not content-indexed until they change (a read error
+  is tried again on the next start). A `.docx` hit whose conversion is not cached gets snippets only
+  while a 2 s budget per search lasts; later ones are listed without lines.
+  Diacritic folding of snippets covers Latin letters, like the index (`ß` is
+  not `ss`).
+- After the first full index build of a large folder the server process may
+  keep 70-170 MB more resident memory than after a restart: the allocator
+  (macOS especially) holds on to freed memory. It does not grow with the
+  folder.
 - CSV previews show the first 5000 rows, and xlsx the first 1000 rows per
   sheet, with values stringified.
 - Word `.docx` files are shown as plain content, not as Word lays them out:
@@ -28,6 +67,43 @@
   files and password-protected documents are refused; very long documents are
   cut at 2 MB of markdown. They are view-only, even with `--allow-edit`. See
   [Word documents](docx.md).
+- Find in the file (see [Find in the file](find.md)):
+  - At most 5000 matches are counted and highlighted ("5,000+"). Large files
+    are searched in their first 32 MB, and with the bar open each live change to
+    such a file reads it again.
+  - Accents are not folded and a match never spans lines (or table cells).
+  - The JSON tree searches only expanded nodes; use the Source tab for all of it.
+    CSV and xlsx search the loaded rows only (see above); a match in the hidden
+    part of a truncated cell is counted but only shown when it is the current one.
+  - In a zoomed-in diagram, matches outside the zoomed area are not scrolled
+    into view. Browsers other than Chrome may not highlight matches in plain SVG
+    diagram text (the counter and navigation still work).
+  - Opening the bar from the desktop menu right after following a "/" search
+    match: the search's scroll-to-match can pull the page back for a couple of
+    seconds, until a key or a click.
+- Code outline (see [Code outline](outline.md)):
+  - Only Python, JavaScript / TypeScript, CSS / SCSS / LESS, HTML, Java, C#
+    and shell. Go, Rust, C, C++, Ruby, PHP, Kotlin, Swift, SQL, YAML, TOML,
+    JSON, Vue / Svelte single-file components and others get none, and files
+    without an extension are not recognised by their shebang.
+  - C# and shell are heuristic (rules over tokens and lines, no grammar):
+    unusual code, such as `#if` branches with unbalanced braces, can confuse
+    the C# outline, which also lists no fields, events or delegates. Nested
+    shell functions are listed flat, and only `# ---- Name ----`, `### Name`
+    and banner comments count as sections.
+  - SCSS and LESS are read by the CSS grammar after blanking what it does not
+    know (`//` comments, variables, mixin calls, guards, interpolation), so
+    unusual syntax can drop or misplace rules. `@if` / `@each` / `@include`
+    are not listed (the rules inside them are).
+  - TypeScript `declare module "x" { }` blocks and plain class fields are not
+    listed, and nor are assignments other than `exports.x = ...`,
+    `module.exports = ...` and `X.prototype.y = ...`.
+  - Java and C# overloads are separate entries; TypeScript overloads are one.
+    Enum members, anonymous classes, local classes and lambdas are not listed.
+  - Files over 2 MB, or whose outline takes more than 1.5 s of work (in the
+    outline worker), get none; without a worker, more than 100 ms in one step.
+    Large outlines show 500 entries at first ("Show more" adds more; the
+    filter searches all). The outline is not shown in the editor.
 - In dark mode each mermaid diagram is rendered twice (dark for the screen, a
   light copy that only `@media print` shows), so printing uses light colours.
 - PDF export: diagrams wider than the page are scaled down to the page width.
@@ -57,6 +133,23 @@
     tab only hears about changes made through its own server.
   - Very large rewrites can hit the 1 s diff budget; the banner then reads "too
     many changes to compare quickly" and offers no diff.
+  - Code and text marks (see [Changes](changes.md#code-and-text-highlights)):
+    a file with a lone carriage return (old Mac line ends) gets none, as its
+    line numbers would not match. Changed words are highlighted only in
+    browsers with the CSS Custom Highlight API, for lines up to 1,000
+    characters, up to 2,000 modified lines (none at all past 20,000 changed
+    lines), not in a run of more than 400 modified lines (a rewrite) and within
+    0.1 s. Removals keep 500 lines for the inline view. Files over 300 KB get
+    bars only. With JSON pretty-print on, the marks compare the pretty-printed
+    versions, so their count can differ from the banner's (which compares the
+    file text). CSV tables get no marks. In text files over 256 KB, only the
+    parts around the first four changes outside the start and end are loaded
+    on their own; later ones are a stop on the "not loaded" bar until you load
+    that part.
+  - Outline dots for removed lines right after a symbol's last line use the
+    indentation of the removed text: deeper than the symbol's first line
+    counts as the tail of its body (dot), otherwise as a sibling removed after
+    it (no dot), so a removed blank line or closing brace alone gets no dot.
   - The What's new summaries are computed in the browser like the banner's (a
     content fetch, a snapshot fetch and a diff per row on screen, three at a
     time), so scrolling quickly through hundreds of large changed files takes a

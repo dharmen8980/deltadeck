@@ -19,6 +19,8 @@ it still exists) and otherwise starts with no folder selected.
 | Drop default deny list | `--no-default-deny` | none | off |
 | Ignore patterns (add) | `--ignore PATTERN` (repeatable) | `DOCS_VIEWER_IGNORE` (comma-separated) | `__pycache__`, `*.pyc`, `.DS_Store`, `node_modules`, `.venv`, `.git` |
 | Search size limit | `--search-max-mb N` | `DOCS_VIEWER_SEARCH_MAX_MB` | `2` (larger files are not indexed for content search) |
+| Search: files indexed in all | `--search-max-files N` | `DOCS_VIEWER_SEARCH_MAX_FILES` | `100000` (see [Search index](#search-index)) |
+| Search: total size indexed | `--search-max-total-mb N` | `DOCS_VIEWER_SEARCH_MAX_TOTAL_MB` | `2048` (the indexed files' sizes added up; a `.docx` counts its file size) |
 | UI directory | `--ui-dir PATH` | none | `web/out` next to this README |
 | Editing | `--allow-edit` | `DOCS_VIEWER_ALLOW_EDIT=1` | off (read-only) |
 | Data dir (history, trash, audit, `state.json`) | `--data-dir PATH` | `DOCS_VIEWER_DATA_DIR` | `.data` next to this README |
@@ -26,6 +28,9 @@ it still exists) and otherwise starts with no folder selected.
 | Upload size limit per file | `--upload-max-mb N` | none | `25` |
 | Upload extensions | `--upload-ext EXT` (repeatable or comma-separated; replaces the list) | none | `png jpg jpeg gif webp svg pdf md mmd txt csv json yaml yml py sh log` |
 | Git views | `--git PATH\|off` | `DOCS_VIEWER_GIT` | found on `PATH`, then `/opt/homebrew/bin`, `/usr/local/bin`, `/usr/bin`, `/bin` (never the macOS stub); `off` turns them off; see [Git](git.md#which-git) |
+| Backstop directory pass | `--rescan-interval SECONDS` | `DOCS_VIEWER_RESCAN_INTERVAL` | `300` (`60` on a network volume); `0` = off; see [Change detection](#change-detection) |
+| Backstop full pass | `--full-rescan-interval SECONDS` | `DOCS_VIEWER_FULL_RESCAN_INTERVAL` | `1800` (`600` on a network volume); `0` = off |
+| Backstop while nobody is connected | `--rescan-when-idle` | `DOCS_VIEWER_RESCAN_WHEN_IDLE=1` | off: the timers pause, and a pass that fell due runs when a browser connects |
 | Desktop mode (set by the desktop app) | `--desktop` | `DOCS_VIEWER_DESKTOP=1` | off; see [Desktop app](desktop.md) |
 
 Deny and ignore patterns are case-insensitive `fnmatch` globs. Names and
@@ -44,6 +49,103 @@ uv run viewer --root ~/notes --port 9000 --deny '*.sqlite' --ignore 'dist'
 
 `.ldv-tmp-*` (the editor's temporary files during an atomic save) is on the
 default ignore list, so it never shows in the tree or search.
+
+## Change detection
+
+The file watcher (`watchfiles`: FSEvents on macOS, inotify on Linux) is the
+source of live updates. The tree is scanned in full once at startup. After
+that the server does not poll. Backstop passes run on a low-priority thread
+(utility QoS on macOS, which keeps them on the efficiency cores, and nice 10 on
+Linux) and pause briefly every 512 stats. Each pass walks the disk without
+holding the scan lock and then rescans only what differs. A pass still running
+at shutdown or a folder switch stops at its next pause.
+
+- A **directory pass** stats every known directory and re-lists those whose
+  mtime, ctime or inode changed. Each changed directory is listed once; only
+  its new or vanished subfolders are scanned further. It catches entries
+  created, deleted or renamed anywhere, including folder moves and case-only
+  renames. It does not catch a file edited in place, because that leaves the
+  directory alone. A directory changed within the last 3 s is always re-listed,
+  since a second change within the same mtime tick would not show. A directory
+  dated more than a minute in the future (a file server whose clock runs ahead)
+  is trusted rather than re-listed on every pass.
+- A **full pass** stats every file, so it also catches in-place edits.
+
+A pass runs:
+
+| When | Pass |
+|---|---|
+| The watcher starts or restarts (3 s later, for what changed while nothing listened) | full |
+| The watcher fails or ends (it restarts with a 1, 2, 4 ... s backoff, up to 10 min) | while it is down: directory pass every 30 s, full pass every 5 min |
+| A watcher batch of 2000 or more paths (git checkout, unpacking, possibly an overflow) | directory pass 2 s later, and a full pass 10 s later (at most one such full pass per minute) |
+| An event for the root itself | directory pass (not a full rescan) |
+| An event outside the root (unknown spelling) | full |
+| Wake from sleep or a clock jump (the wall clock and monotonic clock disagree by over 30 s; checked every 60 s) | directory pass on a local volume (nothing changed there while asleep but what the watcher saw); full on a network volume |
+| The root's volume goes away or comes back, or the root is replaced (its device and inode, checked every 60 s) | directory pass when it is gone (the tree empties); full when it is back |
+| `--rescan-interval` / `--full-rescan-interval` timers | directory / full |
+
+Network volumes (smbfs, nfs, afpfs, webdav, cifs, 9p, macFUSE, and any Linux
+`fuse.*` mount such as sshfs or rclone, as detected from the mount table) get
+the shorter defaults, because the watcher
+sees only this machine's changes there. The timers run only while someone uses
+the viewer: a live-update stream is open, or an HTTP request came in during the
+last 10 minutes. With nobody looking they pause. Requests from the watcher and
+wake still run. The startup log line names the intervals in use.
+
+## Search index
+
+Content search uses an SQLite FTS5 index kept on disk, one file per folder:
+`<data dir>/search/<key>.sqlite3` (plus `-wal`, `-shm` and a `.lock`; `<key>` =
+first 24 hex chars of sha256(canonical root path), the same key as the edit
+store). It is *contentless*: it holds the words (tokens) of each file and its
+path, size and mtime, never a copy of the text. Snippets are read from the
+files themselves when you search (a `.docx` from its cached conversion).
+
+- **Restarts are incremental.** The index survives restarts and folder
+  switches; on start only files whose size or mtime changed are read again
+  (about 2-4 s for 60 000 files instead of a full rebuild).
+- **Disk use** is roughly a quarter to a third of the indexed text: about
+  315 MB for 55 000 files / 1.3 GB, about 700 MB-1 GB for 2-2.8 GB of text. The
+  server's memory no longer grows with it (the SQLite page cache is capped at
+  8 MB). The write-ahead log stays under about 20 MB while building (commits
+  every 500 files or 4 MB of text) and is truncated when a build ends.
+- **Caps.** At most `--search-max-files` files and `--search-max-total-mb` MB
+  of files are indexed. Over a cap the files are chosen deterministically:
+  markdown, mermaid and `.docx` first, then other text, code, then JSON and
+  CSV; within each, shallower paths first, then smaller files, then by path.
+  `/api/search` reports `indexed_files`, `indexable_files`, `limit_reached` and
+  `limit_reason` (`files`, `bytes`, `disk` when the disk is full, `error`), and
+  the search dialog shows "Search covers N of M files - limit reached". File
+  names are always searched in full. A file change that cannot alter the
+  choice (a file that is not chosen and sorts after the last chosen one, or a
+  chosen file saved at the same size under the file cap) is applied on its
+  own; any other re-plans in the background, at most every 5 s.
+- **Files that cannot be indexed** (a broken, encrypted or Office lock-file
+  `.docx`, a document whose markdown is over the size limit, a file that
+  cannot be read) are skipped until their size or mtime changes; they take no
+  place under the caps and do not count in `indexable_files`. Conversion
+  failures are remembered across restarts, read errors (permissions) are
+  tried again on the next start.
+- **Failed writes.** When a write fails (disk full, the database locked) the
+  files indexed so far stay searchable and `limit_reason` says `disk` or
+  `error`; a later file change tries again (at most once a minute).
+- **Where else it can go.** If the data dir overlaps the folder, or the index
+  file is unusable, or another viewer process has the same folder open (the
+  `.lock` is held), the index goes to a private temporary file in the OS temp
+  dir, deleted when the viewer stops or switches folder (one left behind by a
+  killed viewer is deleted by the next one that needs a temporary index). Only if the temp dir
+  itself lies inside the folder is it kept in memory. Nothing is ever written
+  inside the folder in read-only mode.
+- **Rebuilds.** A corrupt file, a file from another version (schema or
+  tokenizer) or one recorded for another folder is deleted and rebuilt. An
+  index reused from an earlier run is checked (`PRAGMA quick_check`, a few
+  seconds per few hundred MB, on its own connection while searches go on)
+  after the start-up catch-up, and a query that finds the database damaged
+  starts a rebuild too.
+- **Cleanup.** Indexes of folders that are no longer current or recent (see
+  below) are deleted when the recent list changes, unless another viewer is
+  using them. Deleting `<data dir>/search/` (with the viewer stopped) is always
+  safe; it is rebuilt on the next start.
 
 ## Choosing and switching folders
 

@@ -79,6 +79,7 @@ history or trash (the path is printed at startup with `EDITING ENABLED`):
 ```
 .data/state.json                   {last_root, recent}: the remembered folders (see Choosing and switching folders)
 .data/seen.sqlite3                 "changed since you last looked" history, all roots (see Changes)
+.data/search/<key>.sqlite3         content-search index per root: tokens and file metadata only (see Configuration)
 .data/roots/<key>/                 <key> = first 24 hex chars of sha256(canonical root path)
   root.json                        {root}; the server refuses to start if it names a different root
   audit.jsonl                      one JSON line per change: ts, op, path, to, size, sha256, history_id, trash_id (never contents)
