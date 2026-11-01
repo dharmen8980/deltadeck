@@ -6,7 +6,8 @@
 #   group (PyInstaller + hooks-contrib, exact pins with hashes in uv.lock; --locked: no re-resolve)
 # - playwright (and its ~100 MB node driver) excluded: desktop mode renders PDFs in Electron
 # - mammoth (.docx, imported lazily) collected explicitly
-# - checked afterwards with the hidden `--self-check` (app imports, FTS5, a .docx conversion, no playwright)
+# - checked afterwards with the hidden `--self-check` (app imports, the search index's FTS5 table, a .docx
+#   conversion, the watchfiles native extension, no playwright)
 # PyInstaller does not cross-compile: the build matches this machine's OS/arch.
 set -euo pipefail
 

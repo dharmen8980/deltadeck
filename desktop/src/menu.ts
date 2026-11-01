@@ -2,6 +2,7 @@
 // and Quit live in File. Devtools only when unpackaged.
 
 import { app, Menu, MenuItemConstructorOptions, shell } from "electron";
+import type { FindAction } from "./page-events";
 
 export const HOMEPAGE = "https://github.com/dharmen8980/local-docs-viewer";
 
@@ -11,6 +12,8 @@ export interface MenuActions {
   setAllowEdit(on: boolean): void;
   showLogs(): void;
   openDataFolder(): void;
+  /** Edit > Find / Find Next / Find Previous (page-events.ts) */
+  find(action: FindAction): void;
 }
 
 export function buildMenu(a: MenuActions): void {
@@ -36,7 +39,19 @@ export function buildMenu(a: MenuActions): void {
         ...(mac ? [{ role: "close" }] : [settings, { type: "separator" }, { role: "quit" }]) as MenuItemConstructorOptions[],
       ],
     },
-    { role: "editMenu" },
+    {
+      label: "Edit",
+      submenu: [
+        { role: "undo" }, { role: "redo" }, { type: "separator" },
+        { role: "cut" }, { role: "copy" }, { role: "paste" },
+        ...(mac ? [{ role: "pasteAndMatchStyle" }, { role: "delete" }, { role: "selectAll" }]
+          : [{ role: "delete" }, { type: "separator" }, { role: "selectAll" }]) as MenuItemConstructorOptions[],
+        { type: "separator" },
+        { label: "Find…", accelerator: "CmdOrCtrl+F", click: () => a.find("open") },
+        { label: "Find Next", accelerator: "CmdOrCtrl+G", click: () => a.find("next") },
+        { label: "Find Previous", accelerator: "Shift+CmdOrCtrl+G", click: () => a.find("prev") },
+      ],
+    },
     {
       label: "View",
       submenu: [

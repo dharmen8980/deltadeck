@@ -7,12 +7,11 @@ import path from "node:path";
 import { app, BrowserWindow, dialog, nativeImage, session, shell } from "electron";
 import { Bridge, startBridge } from "./bridge";
 import { buildMenu, HOMEPAGE } from "./menu";
+import { findScript, pickFolderScript } from "./page-events";
 import { hardenAppEarly, hardenSession, hardenWebContents, SECURE_PREFS, setViewerOrigin } from "./security";
 import { dataDir, freePort, logFile, logsDir, ServerProcess } from "./server-process";
 import { loadSettings, saveSettings, Settings } from "./settings";
 import { loadWindowState, trackWindowState } from "./window-state";
-
-const PICK_EVENT = "ldv:pick-folder"; // web/src/components/root-switcher.tsx PICK_FOLDER_EVENT
 
 app.setName("Local Docs Viewer");
 // A throw-away profile for automated checks (e2e/smoke.mjs; packaged too). Absolute paths only.
@@ -162,8 +161,11 @@ function menu(): void {
     // the server then asks the bridge for the dialog.
     openFolder: () => {
       showWindow();
-      void mainWindow?.webContents.executeJavaScript(`window.dispatchEvent(new Event(${JSON.stringify(PICK_EVENT)})); 0`)
-        .catch(() => undefined);
+      void mainWindow?.webContents.executeJavaScript(pickFolderScript()).catch(() => undefined);
+    },
+    // Find in the open file: the page's find bar (or the editor's search panel) handles it.
+    find: (action) => {
+      void mainWindow?.webContents.executeJavaScript(findScript(action)).catch(() => undefined);
     },
   });
 }
