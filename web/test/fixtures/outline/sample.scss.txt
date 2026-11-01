@@ -1,0 +1,21 @@
+@use "sass:math";
+$breakpoints: (sm: 576px, md: 768px);
+// .commented { }
+%visually-hidden { position: absolute; }
+@function rem($px) { @return math.div($px, 16px) * 1rem; }
+@mixin respond($bp) {
+  @media (min-width: map-get($breakpoints, $bp)) { @content; }
+}
+.card {
+  $pad: 8px;
+  padding: $pad;
+  @extend %visually-hidden;
+  &__title { font-size: rem(18px); }
+  &:hover, &.is-active { color: red; }
+  .icon + & { margin: 0; }
+  @include respond(md) { padding: $pad * 2; }
+  #{$self}--wide { width: 100%; }
+}
+@each $name, $size in $breakpoints {
+  .w-#{$name} { width: $size; }
+}

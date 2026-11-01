@@ -1,13 +1,17 @@
 "use client";
 
-import { createContext, memo, useContext, useMemo, useState } from "react";
+import { createContext, memo, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { ChevronRightIcon, ChevronsDownUpIcon, ChevronsUpDownIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useRoute } from "@/hooks/use-route";
 import { api, ApiError, errorMessage } from "@/lib/api";
+import { HIGHLIGHT_MAX_BYTES, parseLineHash } from "@/lib/code-lines";
 import { cn } from "@/lib/utils";
-import { CodeLines, HIGHLIGHT_MAX_BYTES, parseLineHash } from "./code-viewer";
+import { useFileChange } from "@/components/changes/changes-context";
+import { useLineMarks } from "@/components/changes/use-line-marks";
+import { useFindId, useFindSource } from "@/components/find/use-find-source";
+import { CodeLines } from "./code-viewer";
 import { useAsync, ViewerError, ViewerLoading, type ViewerProps } from "./common";
 import { TextViewer } from "./text-viewer";
 
@@ -130,6 +134,27 @@ export function JsonViewer({ file, reloadKey }: ViewerProps) {
   const [tab, setTab] = useState<string | null>(null);
   const [expand, setExpand] = useState<{ mode: "default" | "all" | "none"; gen: number }>({ mode: "default", gen: 0 });
   const [pretty, setPretty] = useState<boolean | null>(null);
+  // Find in the tree: its rendered text (the Source tab searches the whole text). With nodes
+  // collapsed, the note says how many matches the source text has beyond the ones shown.
+  const treeRef = useRef<HTMLDivElement>(null);
+  const findId = useFindId();
+  const findText = useRef({ text: "", version: 0 });
+  useFindSource(
+    () => ({
+      kind: "dom",
+      root: () => treeRef.current,
+      note: async (q, total) => {
+        if (!treeRef.current?.querySelector('button[aria-label="Expand"]')) return undefined;
+        const { runFind } = await import("@/lib/find/run");
+        const t = findText.current;
+        const r = await runFind(`json:${findId}:${t.version}`, t.text, q.query, q.options);
+        const n = r.starts.length;
+        if (r.error || n <= total) return undefined;
+        return `${n.toLocaleString()}${r.capped ? "+" : ""} in the source; collapsed nodes are not searched: Expand all, or use Source`;
+      },
+    }),
+    [findId],
+  );
 
   const parsed = useMemo(() => {
     if (!data) return null;
@@ -141,12 +166,42 @@ export function JsonViewer({ file, reloadKey }: ViewerProps) {
   }, [data]);
 
   const original = data?.text ?? "";
+  useEffect(() => {
+    if (findText.current.text !== original) findText.current = { text: original, version: findText.current.version + 1 };
+  }, [original]);
   const multiLine = original.trimEnd().includes("\n");
   const usePretty = pretty ?? (!multiLine && !lineTarget);
   const source = useMemo(() => {
     if (!parsed?.ok || !usePretty) return original;
     return JSON.stringify(parsed.value, null, 2);
   }, [parsed, usePretty, original]);
+
+  // Changes since the last view, on the source: the banner's diff for the original text; the
+  // pretty-printed view compares both versions pretty-printed (an earlier copy that does not
+  // parse gets no marks there).
+  const fc = useFileChange();
+  const changedBase = fc?.changed ? (fc.baseText ?? null) : null;
+  const prettyBase = useMemo<string | null | undefined>(() => {
+    if (!parsed?.ok || !usePretty) return undefined;
+    if (changedBase === null) return null;
+    try {
+      return JSON.stringify(JSON.parse(changedBase), null, 2);
+    } catch {
+      return null;
+    }
+  }, [parsed, usePretty, changedBase]);
+  const marks = useLineMarks(source, {
+    base: prettyBase,
+    words: source.length <= HIGHLIGHT_MAX_BYTES,
+    skip: !parsed?.ok,
+  });
+
+  // A changed file opens on the source, where the changes are marked (the tree has no marks). Decided
+  // once per open: neither Mark as seen nor a live change while reading switches the tab.
+  const [first, setFirst] = useState<{ path: string; text: string; source: boolean } | null>(null);
+  if (data && (!first || first.path !== file.path)) setFirst({ path: file.path, text: data.text, source: false });
+  else if (first && !first.source && tab === null && data?.text === first.text && fc?.changed) setFirst({ ...first, source: true });
+  const autoSource = Boolean(first && first.path === file.path && first.source);
 
   if (error instanceof ApiError && error.status === 413) return <TextViewer file={file} reloadKey={reloadKey} />;
   if (!data) {
@@ -164,7 +219,7 @@ export function JsonViewer({ file, reloadKey }: ViewerProps) {
     );
   }
 
-  const activeTab = tab ?? (lineTarget ? "source" : "tree");
+  const activeTab = tab ?? (lineTarget || autoSource ? "source" : "tree");
 
   return (
     <Tabs value={activeTab} onValueChange={setTab} className="gap-0">
@@ -196,14 +251,14 @@ export function JsonViewer({ file, reloadKey }: ViewerProps) {
       <TabsContent value="tree" className="overflow-x-auto px-6 py-4 font-mono text-[13px] leading-relaxed">
         {parsed?.ok ? (
           <ExpandCtx.Provider value={{ mode: expand.mode }}>
-            <div className="pl-5">
+            <div ref={treeRef} className="pl-5">
               <JsonNode key={expand.gen} name={null} value={parsed.value} depth={0} last />
             </div>
           </ExpandCtx.Provider>
         ) : null}
       </TabsContent>
       <TabsContent value="source">
-        <CodeLines code={source} lang={source.length <= HIGHLIGHT_MAX_BYTES ? "json" : null} />
+        <CodeLines code={source} lang={source.length <= HIGHLIGHT_MAX_BYTES ? "json" : null} marks={marks} />
       </TabsContent>
     </Tabs>
   );

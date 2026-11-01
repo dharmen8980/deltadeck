@@ -12,7 +12,7 @@ const DATA_IMAGE = /^data:image\/(?:png|jpeg|gif|webp|bmp);base64,[A-Za-z0-9+/=]
 const SAFE_HREF = /^(?:https?:|mailto:|#)/i;
 
 /** What the converter emits, nothing more: no classes, styles, events, iframes or forms. */
-export const DOCX_SCHEMA = {
+const DOCX_SCHEMA = {
   ...defaultSchema,
   tagNames: [
     "h1", "h2", "h3", "h4", "h5", "h6", "p", "ul", "ol", "li", "table", "thead", "tbody", "tfoot", "tr",

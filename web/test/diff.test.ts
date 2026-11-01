@@ -7,6 +7,7 @@ import {
   diffMarkdownBlocks,
   diffWordsInLine,
   intraLineHighlights,
+  lineChangeCounts,
   onlyWhitespaceChanged,
   sectionCount,
   splitMarkdownBlocks,
@@ -255,8 +256,38 @@ test("summarizeChange: other text gives line counts", () => {
   assert.deepEqual(s, { type: "lines", changes: 2, added: 2, removed: 1 });
 });
 
+test("summarizeChange: with line marks (code, text, json), added / edited / removed lines", () => {
+  const oldText = "a\nb\nc\ngone 1\ngone 2\nz\n";
+  const newText = "a\nB\nnew\nc\nz\n";
+  const { lineDiff } = diffVersions(oldText, newText, false);
+  const input = { markdown: false, textKind: true, baseText: oldText, currentText: newText, lineDiff, markdownDiff: null, sizeDelta: 0 };
+  assert.deepEqual(summarizeChange({ ...input, lineMarks: true }), {
+    type: "lines",
+    changes: 2,
+    added: 2,
+    removed: 3,
+    kinds: { added: 1, modified: 1, removed: 2 },
+  });
+  // Off (csv, and the default): no kinds, as before.
+  assert.equal("kinds" in summarizeChange(input), false);
+});
+
+test("lineChangeCounts pairs removed with added lines in each run", () => {
+  const d = must(diffLineRows("x\na\nb\nc\nd\n", "a\nB\nC\nD\nE\nF\n", { normalize: true }));
+  // run 1: x removed; run 2: b c d -> B C D E F (3 modified, 2 added)
+  assert.deepEqual(lineChangeCounts(d), { added: 2, modified: 3, removed: 1 });
+  assert.deepEqual(lineChangeCounts(must(diffLineRows("a\n", "a\n"))), { added: 0, modified: 0, removed: 0 });
+  assert.deepEqual(lineChangeCounts(must(diffLineRows("a\nb\n", "", { normalize: true }))), { added: 0, modified: 0, removed: 2 });
+});
+
 test("summarizeChange: whitespace only, same text, too many, size only", () => {
   assert.deepEqual(summarize("a b\n", "a  b\n", false), { type: "whitespace" });
+  // Line-marked kinds (code, text) mark whitespace-only lines too: the counts come along.
+  const ws = must(diffLineRows("def f():\n  return 1\n", "def f():\n    return 1\n", { normalize: true }));
+  assert.deepEqual(
+    summarizeChange({ markdown: false, textKind: true, baseText: "", currentText: "", lineDiff: ws, markdownDiff: null, sizeDelta: 2, lineMarks: true }),
+    { type: "whitespace", kinds: { added: 0, modified: 1, removed: 0 } },
+  );
   assert.deepEqual(summarize("a\r\nb", "a\nb\n", false), { type: "same" });
   // Both texts known, the diff gave up.
   assert.deepEqual(

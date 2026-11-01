@@ -1,5 +1,7 @@
 // Pure parts of the git views: the Uncommitted feed rows, their one-line details, and blame
-// grouping. No `@/` or relative value imports: unit tested with node --test.
+// grouping. No `@/` imports (relative `.ts` ones are fine): unit tested with node --test.
+
+import { plural } from "./format.ts";
 
 export type GitCode = "M" | "A" | "D" | "R" | "??" | "U";
 
@@ -63,8 +65,6 @@ export function uncommittedItems(entries: readonly GitEntry[]): GitFeedItem[] {
       (a.path < b.path ? -1 : a.path > b.path ? 1 : 0),
   );
 }
-
-const plural = (n: number, word: string) => `${n.toLocaleString()} ${word}${n === 1 ? "" : "s"}`;
 
 /** What the entry changed against the last commit, in a few words. */
 export function gitDetail(e: GitEntry): string {

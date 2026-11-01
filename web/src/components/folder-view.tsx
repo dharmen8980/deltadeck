@@ -4,7 +4,8 @@ import { ClockIcon, FolderIcon } from "lucide-react";
 import { FileKindIcon } from "@/components/file-icon";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { formatBytes, formatRelative, formatTime, type FileEntry, type TreeResponse } from "@/lib/api";
+import { type FileEntry, type TreeResponse } from "@/lib/api";
+import { formatBytes, formatRelative, formatTime } from "@/lib/format";
 import { viewerHref } from "@/lib/paths";
 import { sortDirs, sortFiles, type DirNode, type SortMode } from "@/lib/tree";
 

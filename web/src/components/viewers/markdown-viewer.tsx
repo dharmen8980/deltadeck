@@ -8,16 +8,18 @@ import rehypeSanitize, { defaultSchema } from "rehype-sanitize";
 import rehypeSlug from "rehype-slug";
 import { CheckIcon, CopyIcon, ImageOffIcon, LinkIcon, ShieldOffIcon } from "lucide-react";
 import { useFileChange } from "@/components/changes/changes-context";
+import { useFindSource } from "@/components/find/use-find-source";
 import { TocInline, TocPanel, type TocHeading } from "@/components/toc";
 import { useHighlight } from "@/hooks/use-highlight";
 import { useRoute } from "@/hooks/use-route";
 import { api, errorMessage, rawUrl } from "@/lib/api";
+import { HIGHLIGHT_MAX_BYTES, parseLineHash } from "@/lib/code-lines";
 import { blockMarks, normalizeText, type ChangeMarks } from "@/lib/diff";
+import { DOC_SKIP } from "@/lib/find/skip";
 import { isExternal, isWebLink, resolveLink, viewerHref } from "@/lib/paths";
 import { highlight, langForFence } from "@/lib/shiki";
 import { rehypeChangeMarks } from "@/lib/rehype-change-marks";
 import { stickyScroll } from "@/lib/sticky-scroll";
-import { parseLineHash } from "./code-viewer";
 import { useAsync, ViewerError, ViewerLoading, type ViewerProps } from "./common";
 import { MermaidDiagram } from "./mermaid-viewer";
 
@@ -59,7 +61,7 @@ function CodeBlock({ code, lang }: { code: string; lang: string }) {
   const [html, setHtml] = useState<{ code: string; html: string } | null>(null);
   const [failed, setFailed] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
-  const highlightable = Boolean(shikiLang) && code.length <= 300 * 1024;
+  const highlightable = Boolean(shikiLang) && code.length <= HIGHLIGHT_MAX_BYTES;
   // The PDF print page waits until no element is marked pending.
   const pending = highlightable && html?.code !== code && failed !== code;
   const lines = code.split("\n");
@@ -68,7 +70,7 @@ function CodeBlock({ code, lang }: { code: string; lang: string }) {
   const cols = Math.max(1, ...lines.map((l) => l.replace(/\t/g, "    ").length));
 
   useEffect(() => {
-    if (!shikiLang || code.length > 300 * 1024) return;
+    if (!shikiLang || code.length > HIGHLIGHT_MAX_BYTES) return;
     let cancelled = false;
     highlight(code, shikiLang)
       .then((h) => !cancelled && setHtml({ code, html: h }))
@@ -419,6 +421,8 @@ export function MarkdownViewer({ file, reloadKey }: ViewerProps) {
   }, [data, hash, file.path]);
 
   useHighlight(articleRef, hl, data, hll);
+  // Find in the file (components/find/): the rendered text, code blocks, tables and diagrams.
+  useFindSource(() => ({ kind: "dom", root: () => articleRef.current, skip: DOC_SKIP }), []);
 
   if (!data) {
     if (error) return <ViewerError message={errorMessage(error)} file={file} />;
@@ -427,7 +431,7 @@ export function MarkdownViewer({ file, reloadKey }: ViewerProps) {
 
   return (
     <div className="flex justify-center gap-8 px-4 py-6 md:px-8">
-      <div className="print-area min-w-0 max-w-4xl flex-1">
+      <div className="print-area min-w-0 max-w-[var(--reading-width,56rem)] flex-1">
         <TocInline headings={headings} words={words} onSelect={selectHeading} />
         <article ref={articleRef} className={ARTICLE_CLASS}>
           <MarkdownMarkup text={data.text} components={components} marks={marks} />

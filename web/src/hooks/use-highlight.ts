@@ -1,11 +1,10 @@
 "use client";
 
 import { useEffect, type RefObject } from "react";
+import { clearHighlight, setHighlight } from "@/lib/highlights";
 import { stickyScroll } from "@/lib/sticky-scroll";
 
-const HL_NAME = "search-hl";
-
-export function queryTerms(q: string): string[] {
+function queryTerms(q: string): string[] {
   const terms = q
     .split(/\s+/)
     .map((t) => t.replace(/^["'*]+|["'*]+$/g, "").toLowerCase())
@@ -107,9 +106,8 @@ export function useHighlight(
 ) {
   useEffect(() => {
     const root = ref.current;
-    const highlights = typeof CSS !== "undefined" ? (CSS as unknown as { highlights?: Map<string, unknown> }).highlights : undefined;
     if (!root || !query.trim()) {
-      highlights?.delete(HL_NAME);
+      clearHighlight("search");
       return;
     }
     const terms = queryTerms(query);
@@ -121,9 +119,7 @@ export function useHighlight(
 
     const apply = () => {
       const ranges = collectRanges(root, terms);
-      if (highlights && typeof Highlight !== "undefined") {
-        highlights.set(HL_NAME, new Highlight(...ranges));
-      }
+      setHighlight("search", ranges);
       if (userMoved) return;
       target = bestRange(ranges, terms, hint);
       if (target && !stopScroll) {
@@ -145,7 +141,7 @@ export function useHighlight(
       obs.disconnect();
       if (timer) clearTimeout(timer);
       stopScroll?.();
-      highlights?.delete(HL_NAME);
+      clearHighlight("search");
     };
   }, [ref, query, contentKey, hint]);
 }

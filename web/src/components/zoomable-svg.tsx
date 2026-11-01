@@ -18,6 +18,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogClose, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { TooltipButton } from "@/components/tooltip-button";
 import { usePanZoom, type PanZoom, type View } from "@/hooks/use-pan-zoom";
 import { useRoute } from "@/hooks/use-route";
 import { basename } from "@/lib/paths";
@@ -38,36 +39,14 @@ export function svgNaturalSize(svg: string): { width: number; height: number } |
 
 // ---------- controls ----------
 
-function ToolButton({
-  label,
-  keys,
-  size = "icon-xs",
-  children,
-  ...props
-}: React.ComponentProps<typeof Button> & { label: string; keys?: string }) {
-  return (
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <Button variant="ghost" size={size} aria-label={label} {...props}>
-          {children}
-        </Button>
-      </TooltipTrigger>
-      <TooltipContent>
-        {label}
-        {keys ? <span className="opacity-60">{keys}</span> : null}
-      </TooltipContent>
-    </Tooltip>
-  );
-}
-
 function ZoomControls({ pz, large = false, shortcuts = false }: { pz: PanZoom; large?: boolean; shortcuts?: boolean }) {
   const s = pz.view?.s ?? 1;
   const size = large ? "icon-sm" : "icon-xs";
   return (
     <>
-      <ToolButton label="Zoom out" keys={shortcuts ? "-" : undefined} size={size} onClick={pz.zoomOut} disabled={!pz.view || s <= pz.minScale + 1e-6}>
+      <TooltipButton label="Zoom out" keys={shortcuts ? "-" : undefined} size={size} onClick={pz.zoomOut} disabled={!pz.view || s <= pz.minScale + 1e-6}>
         <ZoomOutIcon />
-      </ToolButton>
+      </TooltipButton>
       <Tooltip>
         <TooltipTrigger asChild>
           <Button
@@ -83,12 +62,12 @@ function ZoomControls({ pz, large = false, shortcuts = false }: { pz: PanZoom; l
         </TooltipTrigger>
         <TooltipContent>Reset to 100%</TooltipContent>
       </Tooltip>
-      <ToolButton label="Zoom in" keys={shortcuts ? "+" : undefined} size={size} onClick={pz.zoomIn} disabled={!pz.view || s >= pz.maxScale - 1e-6}>
+      <TooltipButton label="Zoom in" keys={shortcuts ? "+" : undefined} size={size} onClick={pz.zoomIn} disabled={!pz.view || s >= pz.maxScale - 1e-6}>
         <ZoomInIcon />
-      </ToolButton>
-      <ToolButton label="Fit to view" keys={shortcuts ? "0" : undefined} size={size} onClick={pz.reset} disabled={!pz.view || pz.fitted}>
+      </TooltipButton>
+      <TooltipButton label="Fit to view" keys={shortcuts ? "0" : undefined} size={size} onClick={pz.reset} disabled={!pz.view || pz.fitted}>
         <ShrinkIcon />
-      </ToolButton>
+      </TooltipButton>
     </>
   );
 }
@@ -149,9 +128,9 @@ export function ZoomableSvg({
       >
         <ZoomControls pz={pz} />
         {onOpenFullscreen ? (
-          <ToolButton label="Open full screen" onClick={(e) => onOpenFullscreen(e.currentTarget)}>
+          <TooltipButton label="Open full screen" size="icon-xs" onClick={(e) => onOpenFullscreen(e.currentTarget)}>
             <MaximizeIcon />
-          </ToolButton>
+          </TooltipButton>
         ) : null}
         {toolbarExtra}
       </div>
@@ -231,7 +210,7 @@ const EXPORT_BG = { light: "#ffffff", dark: "#171717" };
  * Background a diagram asks for in its `%%{init}%%` directive or front-matter config:
  * `themeVariables.background`, else light for any theme other than "dark". Null: none set.
  */
-export function diagramBackground(source: string): string | null {
+function diagramBackground(source: string): string | null {
   const fm = /^\s*---[ \t]*\r?\n([\s\S]*?)\r?\n[ \t]*---/.exec(source)?.[1] ?? "";
   const directives = Array.from(source.matchAll(/%%\{\s*init(?:ialize)?\s*:([\s\S]*?)\}%%/g), (m) => m[1]).join("\n");
   const config = `${fm}\n${directives}`;
@@ -499,33 +478,33 @@ function PreviewPane({
         <div role="toolbar" aria-label="Diagram controls" className="flex flex-wrap items-center gap-0.5">
           {onStep ? (
             <>
-              <ToolButton label="Previous diagram" keys="PgUp" size="icon-sm" onClick={() => onStep(-1)}>
+              <TooltipButton label="Previous diagram" keys="PgUp" size="icon-sm" onClick={() => onStep(-1)}>
                 <ChevronLeftIcon />
-              </ToolButton>
-              <ToolButton label="Next diagram" keys="PgDn" size="icon-sm" onClick={() => onStep(1)}>
+              </TooltipButton>
+              <TooltipButton label="Next diagram" keys="PgDn" size="icon-sm" onClick={() => onStep(1)}>
                 <ChevronRightIcon />
-              </ToolButton>
+              </TooltipButton>
               <span className="mx-1 h-5 w-px bg-border" aria-hidden />
             </>
           ) : null}
           <ZoomControls pz={pz} large shortcuts />
           <span className="mx-1 h-5 w-px bg-border" aria-hidden />
-          <ToolButton label="Copy SVG" size="icon-sm" onClick={copySvg}>
+          <TooltipButton label="Copy SVG" size="icon-sm" onClick={copySvg}>
             <CopyIcon />
-          </ToolButton>
-          <ToolButton label="Download SVG" size="icon-sm" onClick={downloadSvg}>
+          </TooltipButton>
+          <TooltipButton label="Download SVG" size="icon-sm" onClick={downloadSvg}>
             <FileCodeIcon />
-          </ToolButton>
+          </TooltipButton>
           {pngOk ? (
-            <ToolButton label="Download PNG" size="icon-sm" onClick={downloadPng}>
+            <TooltipButton label="Download PNG" size="icon-sm" onClick={downloadPng}>
               <ImageDownIcon />
-            </ToolButton>
+            </TooltipButton>
           ) : null}
           <span className="mx-1 h-5 w-px bg-border" aria-hidden />
           <DialogClose asChild>
-            <ToolButton label="Close" keys="Esc" size="icon-sm">
+            <TooltipButton label="Close" keys="Esc" size="icon-sm">
               <XIcon />
-            </ToolButton>
+            </TooltipButton>
           </DialogClose>
         </div>
       </div>

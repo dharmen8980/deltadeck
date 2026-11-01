@@ -1,0 +1,14 @@
+@primary: #333;
+// comment { x }
+.mixin(@a) { color: @a; }
+.btn {
+  .mixin(red);
+  &-primary { color: @primary; }
+  @media (min-width: 768px) { padding: 0; }
+}
+.@{prefix}-card {
+  width: ~"calc(100% - @{gap})";
+  .inner when (@mode = dark) { color: white; }
+}
+#ns { .m() { color: red; } }
+.use { #ns > .m(); }

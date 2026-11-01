@@ -4,6 +4,7 @@ import {
   CONTENT_MAX,
   changedDirsOf,
   DOCX_MAX,
+  hasLineMarks,
   isChangedSince,
   isMarkdownText,
   isTracked,
@@ -47,4 +48,9 @@ test("tracked kinds: docx through its markdown", () => {
   assert.equal(isMarkdownText("docx"), true);
   assert.equal(isMarkdownText("markdown"), true);
   assert.equal(isMarkdownText("mermaid"), false);
+});
+
+test("line marks: code, text and json; not markdown, mermaid, csv or docx", () => {
+  for (const k of ["code", "text", "json"]) assert.equal(hasLineMarks(k), true, k);
+  for (const k of ["markdown", "mermaid", "csv", "docx", "image", "pdf"]) assert.equal(hasLineMarks(k), false, k);
 });

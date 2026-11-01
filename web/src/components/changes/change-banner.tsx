@@ -1,21 +1,25 @@
 "use client";
 
-import { useCallback, useEffect } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { CheckIcon, ChevronDownIcon, ChevronUpIcon, GitCommitHorizontalIcon, GitCompareIcon, HistoryIcon, XIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { DiffView } from "@/components/diff/diff-view";
-import { formatRelative, type FileKind } from "@/lib/api";
-import { isMarkdownText, isTracked } from "@/lib/change-rules";
+import { type FileKind } from "@/lib/api";
+import { hasLineMarks, isMarkdownText, isTracked } from "@/lib/change-rules";
 import { sectionCount, summarizeChange } from "@/lib/diff";
+import { formatRelative } from "@/lib/format";
 import { isTypingTarget } from "@/lib/keys";
 import type { GitCompareState } from "@/components/git/git-context";
 import { cn } from "@/lib/utils";
 import type { FileChangeState } from "./changes-context";
 import { SummaryText, summaryDetail, type SummaryDetail } from "./change-summary";
 
-/** The marked changes on screen: highlighted blocks and removal markers, or diff hunks. */
+/**
+ * The marked changes on screen: highlighted blocks and removal markers, the first line of
+ * each run of changed code lines (and a removal at its end), or diff hunks.
+ */
 const TARGETS =
-  ".markdown-body > [data-change], .markdown-body > .md-removed, .markdown-body > .md-removed-end, [data-diff-hunk]";
+  ".markdown-body > [data-change], .markdown-body > .md-removed, .markdown-body > .md-removed-end, [data-change-hunk], [data-diff-hunk]";
 /** Matches the scroll-margin-top of the targets (globals.css, DiffView). */
 const TOP = 96;
 
@@ -35,6 +39,7 @@ function jumpToChange(dir: 1 | -1, first = false): boolean {
 /** What changed, in a few words (most specific first). */
 function detail(state: FileChangeState, kind: FileKind): SummaryDetail {
   const { markdownDiff, lineDiff, baseText, currentText, sizeDelta, tooLarge } = state;
+  if (state.diffPending) return { text: "comparing…" };
   return summaryDetail(
     summarizeChange({
       markdown: isMarkdownText(kind),
@@ -45,9 +50,13 @@ function detail(state: FileChangeState, kind: FileKind): SummaryDetail {
       markdownDiff,
       sizeDelta,
       tooLarge,
+      lineMarks: hasLineMarks(kind),
     }),
   );
 }
+
+const sameDetail = (a: SummaryDetail, b: SummaryDetail) =>
+  a.text === b.text && JSON.stringify(a.parts ?? null) === JSON.stringify(b.parts ?? null);
 
 /** The git variant's detail: the file against the last commit. */
 function gitDetailOf(g: GitCompareState, kind: FileKind): SummaryDetail {
@@ -107,11 +116,17 @@ export function ChangeBanner({
 }) {
   const { baseViewedAt, baseText, currentText, lineDiff, markdownDiff, showDiff, setShowDiff, markSeen } = state;
   const canDiff = baseText !== null && currentText !== null && lineDiff !== null && !git?.isDeleted;
-  const d = git ? gitDetailOf(git, kind) : detail(state, kind);
-  // Something to jump to: highlighted blocks in the article, or the hunks of the open diff.
+  const live = git ? gitDetailOf(git, kind) : detail(state, kind);
+  // While a newer version is diffed (after paint, large files), the last summary stays (no "comparing…" flash).
+  const pending = Boolean((git ?? state).diffPending);
+  const [kept, setKept] = useState<{ git: boolean; d: SummaryDetail } | null>(null);
+  if (!pending && (!kept || kept.git !== Boolean(git) || !sameDetail(kept.d, live))) setKept({ git: Boolean(git), d: live });
+  const d = pending && kept && kept.git === Boolean(git) ? kept.d : live;
+  // Something to jump to: highlighted blocks in the article, marked lines in the code, or the hunks of the open diff.
   const canJump =
     ((showDiff || git?.isDeleted) && (canDiff || Boolean(git?.isDeleted))) ||
-    (isMarkdownText(kind) && markdownDiff !== null && sectionCount(markdownDiff) > 0);
+    (isMarkdownText(kind) && markdownDiff !== null && sectionCount(markdownDiff) > 0) ||
+    (hasLineMarks(kind) && lineDiff !== null && lineDiff.hunks.length > 0);
   const when = git
     ? git.head?.headCommit ?? null
     : baseViewedAt !== null
@@ -132,7 +147,17 @@ export function ChangeBanner({
     .join("\n");
   const Icon = git ? GitCommitHorizontalIcon : HistoryIcon;
 
-  const jump = useCallback((dir: 1 | -1, first = false) => jumpToChange(dir, first), []);
+  // Line-marked kinds whose view has no marks on screen (JSON's tree, marks not applicable): the diff instead.
+  const diffInstead = hasLineMarks(kind) && canDiff && !showDiff;
+  const jump = useCallback(
+    (dir: 1 | -1, first = false) => {
+      if (jumpToChange(dir, first)) return true;
+      if (!diffInstead) return false;
+      setShowDiff(true);
+      return true;
+    },
+    [diffInstead, setShowDiff],
+  );
   // n / p: next / previous change (like a pager), ignored while typing.
   useEffect(() => {
     if (!canJump) return;

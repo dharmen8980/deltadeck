@@ -3,11 +3,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { TreeResponse } from "@/lib/api";
 import { isChangedSince, remapPath } from "@/lib/change-rules";
+import { sha256HexOrNull } from "@/lib/digest";
 import { refreshRootToken, rootToken } from "@/lib/roots-api";
 import {
   needsDigest,
   openChangeStore,
-  sha256Hex,
   type ChangeStore,
   type SeenEvent,
   type SeenRecord,
@@ -189,7 +189,7 @@ export function useChangeTracker(rootPath: string | null | undefined, tree: Tree
       return;
     }
     pendingRef.current = v;
-    void sha256Hex(text).then((hex) => {
+    void sha256HexOrNull(text).then((hex) => {
       if (!hex) return;
       digestRef.current = { text, hex };
       const p = pendingRef.current;

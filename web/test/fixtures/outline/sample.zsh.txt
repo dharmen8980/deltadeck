@@ -1,0 +1,27 @@
+#!/bin/zsh
+################################
+# Prompt
+################################
+function prompt_setup() {
+  local s='it() { quoted }'
+  PROMPT='%~ '
+}
+
+# == Completion ==
+_complete_git () {
+  # nope() {
+  echo $(( 1 << 2 ))
+}
+
+python3 - <<'PY'
+def not_shell(): pass
+PY
+
+case "$1" in
+  start) start ;;
+esac
+
+# a normal comment, not a section
+cleanup() {
+  inner() { :; }
+}

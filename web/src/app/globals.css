@@ -184,6 +184,14 @@
   background-color: color-mix(in oklch, var(--color-yellow-500) 25%, transparent) !important;
 }
 
+/* A line jumped to from the code outline: a short pulse on top of the target highlight. */
+@keyframes outline-flash {
+  from { box-shadow: inset 0 0 0 100vmax color-mix(in oklch, var(--color-yellow-400) 55%, transparent); }
+  to { box-shadow: inset 0 0 0 100vmax transparent; }
+}
+.outline-flash { animation: outline-flash 1.2s ease-out; }
+@media (prefers-reduced-motion: reduce) { .outline-flash { animation: none; } }
+
 mark.hl {
   background: color-mix(in oklch, var(--color-yellow-300) 75%, transparent);
   color: inherit;
@@ -250,6 +258,116 @@ mark.hl.hl-active {
   .markdown-body > [data-change]::before,
   .markdown-body > .md-removed,
   .markdown-body > .md-removed-end { display: none !important; }
+}
+
+/* The same for code and text, line by line (lib/line-marks.ts; applied by lib/code-marks-dom.ts on the
+   highlighted view, rendered by the text viewer): a bar at the left edge and a tint per changed line,
+   the changed words as a custom highlight, and a dashed line where lines were removed. Large files
+   (.code-marks-bars) get the bars only. Nothing here changes the height of a line. */
+.code-lines .line[data-change],
+.text-line[data-change] { --change: var(--color-amber-500); }
+.code-lines .line[data-change="added"],
+.text-line[data-change="added"] { --change: var(--color-emerald-500); }
+.code-lines .line[data-change]:not(.is-target),
+.text-lines .text-line[data-change]:not(.is-target) {
+  background: color-mix(in oklch, var(--change) 8%, transparent);
+}
+.dark .code-lines .line[data-change]:not(.is-target),
+.dark .text-lines .text-line[data-change]:not(.is-target) {
+  background: color-mix(in oklch, var(--change) 12%, transparent);
+}
+.code-marks-bars .line[data-change]:not(.is-target),
+.code-marks-bars .text-line[data-change]:not(.is-target) { background: none; }
+.code-lines .line[data-change] { box-shadow: inset 3px 0 0 var(--change); }
+.text-line[data-change] > .text-line-no { box-shadow: inset 3px 0 0 var(--change); }
+.code-lines .line[data-change-hunk],
+.text-line[data-change-hunk],
+.text-gap[data-change-hunk],
+.code-removed { scroll-margin-top: 6rem; }
+::highlight(change-word) {
+  background-color: color-mix(in oklch, var(--color-amber-500) 32%, transparent);
+}
+.dark ::highlight(change-word) {
+  background-color: color-mix(in oklch, var(--color-amber-400) 30%, transparent);
+}
+/* Removed lines: a zero-height block between two lines (a dashed line on the boundary, a small
+   button over the line numbers); opened, the removed text in place, not selectable. */
+.code-removed {
+  display: block;
+  position: relative;
+  height: 0;
+  border-top: 2px dashed color-mix(in oklch, var(--color-red-500) 60%, transparent);
+  margin-top: -1px;
+  margin-bottom: -1px;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  white-space: pre;
+  user-select: none;
+  -webkit-user-select: none;
+}
+.code-removed.is-open { height: auto; border-bottom: 2px dashed color-mix(in oklch, var(--color-red-500) 60%, transparent); }
+.code-removed-end { margin-top: 0.25rem; }
+.code-removed-toggle {
+  position: absolute;
+  z-index: 1;
+  left: 0;
+  top: -0.5rem;
+  min-width: calc(var(--gutter, 3.5ch) - 0.25ch);
+  height: 1rem;
+  padding: 0 0.25rem;
+  border-radius: 9999px;
+  border: 1px solid color-mix(in oklch, var(--color-red-500) 55%, transparent);
+  background: color-mix(in oklch, var(--color-red-500) 12%, var(--background));
+  color: var(--color-red-700);
+  font-size: 10px;
+  line-height: 0.875rem;
+  text-align: center;
+  cursor: pointer;
+}
+.dark .code-removed-toggle { color: var(--color-red-300); }
+.code-removed-toggle:hover { background: color-mix(in oklch, var(--color-red-500) 22%, var(--background)); }
+.code-removed-toggle:focus-visible { outline: 2px solid var(--ring); outline-offset: 1px; }
+.code-removed-end .code-removed-toggle { top: -0.5rem; }
+/* Before the first line of a segment: the scroll container would clip a pill above it. */
+.text-lines .code-removed:first-child .code-removed-toggle { top: 0; }
+.text-lines .code-removed:first-child:not(:has(.code-removed-toggle))::before { top: 0; }
+.code-removed:not(:has(.code-removed-toggle))::before {
+  /* large files: a tick in the gutter instead of the button */
+  content: "";
+  position: absolute;
+  left: 0;
+  top: -0.25rem;
+  width: 3px;
+  height: 0.5rem;
+  border-radius: 1px;
+  background: var(--color-red-500);
+}
+.code-removed-lines { display: block; padding: 0.125rem 0; }
+.code-removed-line,
+.code-removed-more {
+  display: block;
+  min-width: 100%;
+  width: max-content;
+  background: color-mix(in oklch, var(--color-red-500) 9%, transparent);
+  box-shadow: inset 3px 0 0 var(--color-red-500);
+  color: color-mix(in oklch, var(--foreground) 75%, var(--color-red-600));
+}
+.dark .code-removed-line { background: color-mix(in oklch, var(--color-red-500) 14%, transparent); color: color-mix(in oklch, var(--foreground) 75%, var(--color-red-300)); }
+.code-removed-line::before {
+  content: attr(data-old-line);
+  display: inline-block;
+  width: var(--gutter, 3.5ch);
+  margin-right: 1.25ch;
+  text-align: right;
+  color: var(--color-red-500);
+  opacity: 0.8;
+}
+.text-lines .code-removed-line::before { width: calc(var(--gutter) - 0.75rem); margin-right: 0.75rem; }
+.code-removed-more { font-family: var(--font-sans, sans-serif); font-size: 11px; padding-left: calc(var(--gutter, 3.5ch) + 1.25ch); color: var(--muted-foreground); }
+@media print {
+  .code-lines .line[data-change],
+  .text-line[data-change],
+  .text-line[data-change] > .text-line-no { background: none !important; box-shadow: none !important; }
+  .code-removed { display: none !important; }
 }
 
 .mermaid-diagram svg {
@@ -337,6 +455,28 @@ mark.hl.hl-active {
 }
 .dark ::highlight(search-hl) {
   background-color: color-mix(in oklch, var(--color-yellow-500) 55%, transparent);
+}
+
+/* Find in the file (components/find/): every match, and the current one above it. */
+::highlight(find-hl) {
+  background-color: color-mix(in oklch, var(--color-amber-300) 70%, transparent);
+  color: inherit;
+}
+.dark ::highlight(find-hl) {
+  background-color: color-mix(in oklch, var(--color-amber-500) 45%, transparent);
+}
+::highlight(find-current) {
+  background-color: var(--color-orange-500);
+  /* black on orange passes AA (white does not) */
+  color: #000;
+}
+.dark ::highlight(find-current) {
+  background-color: var(--color-orange-400);
+  color: #000;
+}
+[data-find-current] {
+  outline: 2px solid var(--color-orange-500);
+  outline-offset: -2px;
 }
 
 /* ---------- PDF print layout (/print, rendered by headless Chrome for /api/pdf) ---------- */
@@ -461,3 +601,7 @@ html:has(.pdf-doc) body {
 .pdf-doc .pdf-link-target { color: #737373; font-size: 0.82em; overflow-wrap: anywhere; }
 /* inline code (long paths, identifiers) may break anywhere, also inside table cells */
 .pdf-doc :not(pre) > code { overflow-wrap: anywhere; }
+
+/* dragging a panel edge (components/resize-handle.tsx): one cursor everywhere, no text selection, no width animation */
+body.panel-resizing, body.panel-resizing * { cursor: col-resize !important; user-select: none !important; }
+body.panel-resizing [data-slot="sidebar-gap"], body.panel-resizing [data-slot="sidebar-container"] { transition: none !important; }

@@ -28,9 +28,9 @@ export interface PanZoomOptions {
   panAtFit?: boolean;
 }
 
-export const MIN_ZOOM = 0.1;
-export const MAX_ZOOM = 8;
-export const ZOOM_STEP = 1.25;
+const MIN_ZOOM = 0.1;
+const MAX_ZOOM = 8;
+const ZOOM_STEP = 1.25;
 
 function fitView(size: Size, w: number, h: number, pad: number, maxFit: number): View {
   const s = Math.max(Math.min((size.w - 2 * pad) / w, (size.h - 2 * pad) / h, maxFit), 0.01);

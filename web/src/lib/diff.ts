@@ -1,6 +1,6 @@
 // Diff engine: unified line diffs (jsdiff) and top-level markdown block diffs.
 // Pure and framework-free so it can be unit tested with `node --test` and
-// reused by any "compare" view. Keep it free of `@/` and relative imports.
+// reused by any "compare" view. Keep it free of `@/` imports (relative `.ts` imports are fine).
 
 import { diffArrays, diffLines, diffWordsWithSpace } from "diff";
 import { fromMarkdown } from "mdast-util-from-markdown";
@@ -11,6 +11,10 @@ import { gfmFromMarkdown } from "mdast-util-gfm";
 
 /** Default time budget of one diff (ms); the diff gives up (null) beyond it. */
 export const DIFF_TIMEOUT_MS = 1000;
+/** Texts (base + shown) up to this many characters are first diffed in render, with SYNC_TIMEOUT_MS;
+ * larger ones (or a sync diff that gives up) wait for an idle period. */
+export const SYNC_MAX_CHARS = 256 * 1024;
+export const SYNC_TIMEOUT_MS = 40;
 
 export type LineRowType = "add" | "del" | "ctx" | "skip";
 
@@ -124,6 +128,31 @@ export function onlyWhitespaceChanged(d: LineDiff): boolean {
     }
   }
   return del === add;
+}
+
+/**
+ * Lines of the new text by kind, as the code view marks them: in each run of
+ * changes the k-th removed line pairs with the k-th added one (modified), like
+ * the block diff pairs blocks; the rest are added or removed.
+ */
+export function lineChangeCounts(d: LineDiff): { added: number; modified: number; removed: number } {
+  const out = { added: 0, modified: 0, removed: 0 };
+  let del = 0;
+  let add = 0;
+  const flush = () => {
+    const m = Math.min(del, add);
+    out.modified += m;
+    out.added += add - m;
+    out.removed += del - m;
+    del = add = 0;
+  };
+  for (const r of d.rows) {
+    if (r.type === "del") del++;
+    else if (r.type === "add") add++;
+    else flush();
+  }
+  flush();
+  return out;
 }
 
 /** Collapse runs of unchanged lines, keeping `context` lines around changes. */
@@ -263,7 +292,7 @@ export function splitMarkdownBlocks(text: string): MdBlock[] {
 }
 
 /** Above this combined length the block diff is skipped (parsing alone gets slow). */
-export const BLOCK_DIFF_MAX_CHARS = 2 * 1024 * 1024;
+const BLOCK_DIFF_MAX_CHARS = 2 * 1024 * 1024;
 
 /** null = gave up: texts too large, or the diff ran out of time / edit length. */
 export function diffMarkdownBlocks(
@@ -363,8 +392,16 @@ export function diffVersions(
 /** What changed, most specific first (the banner's and the feed's detail text). */
 export type ChangeSummary =
   | { type: "blocks"; total: number; added: number; modified: number; removed: number }
-  | { type: "lines"; changes: number; added: number; removed: number }
-  | { type: "whitespace" }
+  | {
+      type: "lines";
+      changes: number;
+      added: number;
+      removed: number;
+      /** lines by kind, for kinds marked line by line in place (ChangeSummaryInput.lineMarks) */
+      kinds?: { added: number; modified: number; removed: number };
+    }
+  /** `kinds` as for "lines" (the line marks show whitespace changes too) */
+  | { type: "whitespace"; kinds?: { added: number; modified: number; removed: number } }
   /** same text under a new mtime (touched, regenerated) */
   | { type: "same" }
   /** both texts known but the diff gave up */
@@ -387,6 +424,8 @@ export interface ChangeSummaryInput {
   sizeDelta: number;
   /** the current file is over the fetch limit (CONTENT_MAX), so its text was not read */
   tooLarge?: boolean;
+  /** the kind is marked line by line in place (change-rules hasLineMarks): count lines by kind */
+  lineMarks?: boolean;
 }
 
 export function summarizeChange(s: ChangeSummaryInput): ChangeSummary {
@@ -397,8 +436,9 @@ export function summarizeChange(s: ChangeSummaryInput): ChangeSummary {
   if (lineDiff) {
     // diffVersions normalizes: no hunks means the same text.
     if (!lineDiff.hunks.length) return { type: "same" };
-    if (onlyWhitespaceChanged(lineDiff)) return { type: "whitespace" };
-    return { type: "lines", changes: lineDiff.hunks.length, added: lineDiff.added, removed: lineDiff.removed };
+    const kinds = s.lineMarks && !s.markdown ? { kinds: lineChangeCounts(lineDiff) } : {};
+    if (onlyWhitespaceChanged(lineDiff)) return { type: "whitespace", ...kinds };
+    return { type: "lines", changes: lineDiff.hunks.length, added: lineDiff.added, removed: lineDiff.removed, ...kinds };
   }
   if (baseText !== null && currentText !== null) {
     return normalizeText(baseText) === normalizeText(currentText) ? { type: "same" } : { type: "too-many" };

@@ -5,7 +5,7 @@
 // a mismatch (409) after a folder switch. Every method swallows its errors (console.debug) and
 // resolves a harmless value; the feature just degrades.
 //
-// No `@/` or relative value imports: the unit tests run this file directly under node.
+// No `@/` imports (relative `.ts` ones are fine): the unit tests run this file directly under node.
 
 export interface SeenRecord {
   root: string;
@@ -31,7 +31,7 @@ export interface ViewedVersion {
   /** string: snapshot it; null: no text available (drop a stale snapshot); undefined: leave the snapshot alone */
   text?: string | null;
   /**
-   * SHA-256 hex of `text` (UTF-8), computed ahead of time (sha256Hex): a keepalive commit too
+   * SHA-256 hex of `text` (UTF-8), computed ahead of time (sha256HexOrNull): a keepalive commit too
    * big for the cap sends this instead of the text, and the server keeps the file's text only
    * if it still hashes to it.
    */
@@ -82,7 +82,8 @@ export const KEEPALIVE_MAX = 60 * 1024;
 
 const BASE = "/api/seen";
 
-const utf8Length = (s: string) => (s.length * 3 <= KEEPALIVE_MAX ? s.length * 3 : new TextEncoder().encode(s).length);
+/** An upper bound of the UTF-8 length of `s` (exact only when the estimate is too big to fit). */
+const utf8UpperBound = (s: string) => (s.length * 3 <= KEEPALIVE_MAX ? s.length * 3 : new TextEncoder().encode(s).length);
 
 /**
  * Whether a commit carrying `text` might not fit a keepalive body, so its digest is worth
@@ -91,17 +92,6 @@ const utf8Length = (s: string) => (s.length * 3 <= KEEPALIVE_MAX ? s.length * 3 
  */
 export function needsDigest(text: string | null | undefined, extra = 0): text is string {
   return typeof text === "string" && text.length * 6 + extra * 3 + 1024 > KEEPALIVE_MAX;
-}
-
-/** SHA-256 hex of the UTF-8 encoding of `text`; null where crypto.subtle is missing (not a secure context). */
-export async function sha256Hex(text: string): Promise<string | null> {
-  try {
-    if (typeof crypto === "undefined" || !crypto.subtle) return null;
-    const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text));
-    return Array.from(new Uint8Array(buf), (b) => b.toString(16).padStart(2, "0")).join("");
-  } catch {
-    return null;
-  }
 }
 
 function newClientId(): string {
@@ -133,7 +123,7 @@ export async function openChangeStore(root: string, opts: StoreOptions): Promise
 
   const bodyOf = (json: unknown) => JSON.stringify({ root, client: clientId, ...(json as object) });
   // UTF-8 bytes
-  const fitsKeepalive = (body: string) => body.length <= KEEPALIVE_MAX && utf8Length(body) <= KEEPALIVE_MAX;
+  const fitsKeepalive = (body: string) => body.length <= KEEPALIVE_MAX && utf8UpperBound(body) <= KEEPALIVE_MAX;
 
   const send = (method: "GET" | "POST", url: string, json?: unknown, keepalive = false) => {
     const init: RequestInit = { method, cache: "no-store", credentials: "same-origin", redirect: "error" };

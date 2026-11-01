@@ -1,0 +1,35 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+helper() { :; }
+
+# ---- Setup ----
+function setup {
+  cat <<EOF2
+fake() {
+  echo no
+}
+EOF2
+}
+
+function with_parens() {
+  echo "multi
+line() {
+string"
+}
+
+### Build steps
+build_all ()
+{
+  cat <<-'END'
+	notfn() {
+	END
+}
+
+# ------------------
+# Deploy
+# ------------------
+deploy::prod() ( echo sub )
+echo "foo() {"  # comment foo() {
+x=$(cat <<< "here string")
+after() { :; }

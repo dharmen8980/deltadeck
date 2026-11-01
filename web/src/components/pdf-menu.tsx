@@ -17,15 +17,15 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { pdfUrl, type FileInfo, type PdfOptions } from "@/lib/api";
+import { createPref, usePref } from "@/lib/prefs";
 
-const STORE_KEY = "ldv.pdf-options";
 // "auto": portrait, but landscape for a standalone diagram that prints larger that way
 const DEFAULTS: PdfOptions = { paper: "a4", orientation: "auto", toc: false };
 const ORIENTATIONS: PdfOptions["orientation"][] = ["auto", "portrait", "landscape"];
 
-function loadOptions(): PdfOptions {
+function parseOptions(raw: string | null): PdfOptions {
   try {
-    const v = JSON.parse(localStorage.getItem(STORE_KEY) ?? "null") as Partial<PdfOptions> | null;
+    const v = JSON.parse(raw ?? "null") as Partial<PdfOptions> | null;
     return {
       paper: v?.paper === "letter" ? "letter" : "a4",
       orientation: ORIENTATIONS.includes(v?.orientation as PdfOptions["orientation"])
@@ -37,6 +37,9 @@ function loadOptions(): PdfOptions {
     return DEFAULTS;
   }
 }
+
+// the key predates the `viewer.*` prefs: renaming it would lose saved options
+const optionsPref = createPref<PdfOptions>("ldv.pdf-options", parseOptions, (v) => JSON.stringify(v));
 
 function filenameFrom(res: Response, fallback: string): string {
   const cd = res.headers.get("content-disposition") ?? "";
@@ -64,19 +67,11 @@ async function errorDetail(res: Response): Promise<string> {
 
 /** "PDF" dropdown: server-side, paginated PDF export of a markdown/mermaid file. */
 export function PdfMenu({ file }: { file: FileInfo }) {
-  const [opts, setOpts] = useState<PdfOptions>(() => (typeof window === "undefined" ? DEFAULTS : loadOptions()));
+  const opts = usePref(optionsPref, DEFAULTS);
   const [busy, setBusy] = useState(false);
 
   const update = (patch: Partial<PdfOptions>) => {
-    setOpts((o) => {
-      const next = { ...o, ...patch };
-      try {
-        localStorage.setItem(STORE_KEY, JSON.stringify(next));
-      } catch {
-        /* ignore */
-      }
-      return next;
-    });
+    optionsPref.set({ ...optionsPref.get(), ...patch });
   };
 
   const download = async (o: PdfOptions) => {

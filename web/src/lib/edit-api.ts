@@ -4,8 +4,20 @@
 // never for another page.
 
 import { ApiError, rawUrl, type AppConfig } from "@/lib/api";
+import { sha256Hex } from "@/lib/digest";
+import { formatBytes } from "@/lib/format";
 
+/** The editor's size limit when the server does not say (config.edit_max_bytes). */
 export const EDIT_MAX_BYTES = 2 * 1024 * 1024;
+
+/** The editor's size limit: the server's (config.edit_max_bytes), else EDIT_MAX_BYTES. */
+export function editMaxBytes(config: AppConfig | null | undefined): number {
+  const n = config?.edit_max_bytes;
+  return typeof n === "number" && Number.isFinite(n) && n > 0 ? n : EDIT_MAX_BYTES;
+}
+
+/** "2 MB" */
+export const sizeLimitLabel = (bytes: number) => (Number.isInteger(bytes / 1048576) ? `${bytes / 1048576} MB` : formatBytes(bytes));
 
 export interface SaveResult {
   path: string;
@@ -177,12 +189,6 @@ export const editApi = {
 
 // ---------- loading a file for editing ----------
 
-export async function sha256Hex(data: ArrayBuffer | Uint8Array): Promise<string> {
-  if (!globalThis.crypto?.subtle) throw new Error("This browser context has no WebCrypto (needs http://127.0.0.1).");
-  const digest = await crypto.subtle.digest("SHA-256", data as BufferSource);
-  return Array.from(new Uint8Array(digest), (b) => b.toString(16).padStart(2, "0")).join("");
-}
-
 export interface EditableText {
   text: string;
   sha256: string;
@@ -192,7 +198,7 @@ export interface EditableText {
 }
 
 /** Fetch the exact bytes of a file, hash them and decode as UTF-8 (fails on invalid UTF-8). */
-export async function loadEditable(path: string, signal?: AbortSignal): Promise<EditableText> {
+export async function loadEditable(path: string, signal?: AbortSignal, maxBytes = EDIT_MAX_BYTES): Promise<EditableText> {
   let res: Response;
   try {
     res = await fetch(rawUrl(path), { cache: "no-store", credentials: "same-origin", signal });
@@ -204,7 +210,7 @@ export async function loadEditable(path: string, signal?: AbortSignal): Promise<
     throw new ApiError(res.status, res.status === 404 ? "File not found (404)." : `${res.status} ${res.statusText}`, null);
   }
   const buf = await res.arrayBuffer();
-  if (buf.byteLength > EDIT_MAX_BYTES) throw new Error("This file is larger than 2 MB and cannot be edited here.");
+  if (buf.byteLength > maxBytes) throw new Error(`This file is larger than ${sizeLimitLabel(maxBytes)} and cannot be edited here.`);
   const sha256 = await sha256Hex(buf);
   let text: string;
   try {
@@ -224,8 +230,8 @@ export function utf8Length(s: string): number {
 
 // ---------- name validation (mirrors the server; the server stays authoritative) ----------
 
-export const DEFAULT_DENY = [".env", ".env*", "*token*", "*secret*", "*credential*", "*.pem", "*.key"];
-export const DEFAULT_IGNORE = ["__pycache__", "*.pyc", ".DS_Store", "node_modules", ".venv", ".git", ".ldv-tmp-*"];
+const DEFAULT_DENY = [".env", ".env*", "*token*", "*secret*", "*credential*", "*.pem", "*.key"];
+const DEFAULT_IGNORE = ["__pycache__", "*.pyc", ".DS_Store", "node_modules", ".venv", ".git", ".ldv-tmp-*"];
 
 /** NFKC + case folding, like the server's name folding (approximation of str.casefold). */
 export function foldName(s: string): string {
@@ -235,7 +241,7 @@ export function foldName(s: string): string {
 const reCache = new Map<string, RegExp>();
 
 /** Python fnmatch.translate equivalent (full match). */
-export function fnmatchRegex(pattern: string): RegExp {
+function fnmatchRegex(pattern: string): RegExp {
   const hit = reCache.get(pattern);
   if (hit) return hit;
   let re = "";
@@ -263,7 +269,7 @@ export function fnmatchRegex(pattern: string): RegExp {
   return out;
 }
 
-export function matchesAny(name: string, patterns: string[]): string | null {
+function matchesAny(name: string, patterns: string[]): string | null {
   const n = foldName(name);
   for (const p of patterns) if (fnmatchRegex(foldName(p)).test(n)) return p;
   return null;
@@ -277,7 +283,7 @@ export interface NameRules {
 export function nameRules(config: AppConfig | null): NameRules {
   return {
     deny: config?.deny_patterns ?? DEFAULT_DENY,
-    ignore: [...(config?.ignore_patterns ?? DEFAULT_IGNORE), ".ldv-tmp-*"],
+    ignore: config?.ignore_patterns ?? DEFAULT_IGNORE,
   };
 }
 
@@ -321,26 +327,4 @@ export function uploadProblem(file: File, config: AppConfig | null): string | nu
     return `${name}: larger than the ${Math.round(max / 1024 / 1024)} MB upload limit`;
   }
   return null;
-}
-
-/** Epoch milliseconds from seconds, milliseconds or an ISO string (NaN if unknown). */
-export function whenMs(v: number | string | undefined | null): number {
-  if (v === undefined || v === null || v === "") return NaN;
-  if (typeof v === "number") return v > 1e12 ? v : v * 1000;
-  const n = Number(v);
-  return Number.isFinite(n) ? (n > 1e12 ? n : n * 1000) : Date.parse(v);
-}
-
-export function formatWhen(v: number | string | undefined | null): string {
-  if (v === undefined || v === null || v === "") return "";
-  const ms = whenMs(v);
-  if (!Number.isFinite(ms)) return String(v);
-  return new Date(ms).toLocaleString(undefined, {
-    year: "numeric",
-    month: "short",
-    day: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-  });
 }

@@ -15,9 +15,10 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import { FileKindIcon } from "@/components/file-icon";
 import type { ChangeTracker } from "@/hooks/use-change-tracker";
-import { api, ApiError, formatRelative, type FileKind, type TreeResponse } from "@/lib/api";
-import { isMarkdownText, isTracked, trackedMax } from "@/lib/change-rules";
+import { api, ApiError, type FileKind, type TreeResponse } from "@/lib/api";
+import { hasLineMarks, isMarkdownText, isTracked, trackedMax } from "@/lib/change-rules";
 import { diffVersions, summarizeChange, type ChangeSummary } from "@/lib/diff";
+import { formatRelative } from "@/lib/format";
 import { viewerHref } from "@/lib/paths";
 import { cn } from "@/lib/utils";
 import {
@@ -119,6 +120,7 @@ export function useChangesSource(tree: TreeResponse | null, tracker: ChangeTrack
           markdownDiff,
           sizeDelta: base ? item.size - base.size : 0,
           tooLarge,
+          lineMarks: hasLineMarks(item.kind),
         });
       },
     });

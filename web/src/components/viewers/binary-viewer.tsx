@@ -1,13 +1,18 @@
 "use client";
 
+import { useRef } from "react";
 import { DownloadIcon, FileQuestionIcon } from "lucide-react";
+import { useFindSource } from "@/components/find/use-find-source";
 import { Button } from "@/components/ui/button";
-import { formatBytes, formatTime, rawUrl } from "@/lib/api";
-import type { ViewerProps } from "./common";
+import { rawUrl } from "@/lib/api";
+import { formatBytes, formatTime } from "@/lib/format";
+import { NO_FIND_BINARY, type ViewerProps } from "./common";
 
 export function BinaryViewer({ file }: ViewerProps) {
+  const ref = useRef<HTMLDivElement>(null);
+  useFindSource(() => ({ kind: "none", root: () => ref.current, message: NO_FIND_BINARY }), []);
   return (
-    <div className="flex flex-col items-center gap-3 p-10 text-center">
+    <div ref={ref} className="flex flex-col items-center gap-3 p-10 text-center">
       <FileQuestionIcon className="size-10 text-muted-foreground" />
       <div>
         <div className="font-medium">{file.name}</div>

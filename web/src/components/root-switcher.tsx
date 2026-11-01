@@ -25,7 +25,7 @@ export function reloadHome() {
 }
 
 /** Window event the desktop app's File > Open Folder... menu dispatches (from its main process). */
-export const PICK_FOLDER_EVENT = "ldv:pick-folder";
+const PICK_FOLDER_EVENT = "ldv:pick-folder";
 
 const base = (p: string) => p.replace(/[/\\]+$/, "").split(/[/\\]/).pop() || p;
 
@@ -37,7 +37,7 @@ export interface RootActionOpts {
 }
 
 /** Recent folders + pick/switch/forget. A successful switch reloads the page at "/". */
-export function useRootActions({ beforeSwitch, onLeave }: RootActionOpts = {}) {
+function useRootActions({ beforeSwitch, onLeave }: RootActionOpts = {}) {
   const [info, setInfo] = useState<RootsInfo | null>(null);
   const [picking, setPicking] = useState(false);
   const [busy, setBusy] = useState(false);

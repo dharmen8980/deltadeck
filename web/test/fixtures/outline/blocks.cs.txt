@@ -1,0 +1,41 @@
+namespace Shop.Api
+{
+    using System;
+
+    // public class Commented { }
+    public interface IOrders<in T> where T : notnull
+    {
+        Task<Order?> FindAsync(Guid id, CancellationToken ct = default);
+        event EventHandler Created;
+    }
+
+    internal static class Extensions
+    {
+        public static readonly Func<int, int> Twice = x => x * 2;
+        public static string Describe(this Order o) =>
+            $"{o.Id}: {o.Lines.Count switch { 0 => "empty", _ => "full" }}";
+        private const string Template = @"{ ""a"": 1 }";
+
+        public static T Pick<T>(IEnumerable<T> xs) where T : class
+        {
+            var list = new List<T>();
+            if (list.Count == 0) throw new InvalidOperationException("x {");
+            return list[0];
+        }
+    }
+
+    namespace Models
+    {
+        public class Order
+        {
+            public Guid Id { get; set; }
+            public List<string> Lines { get; } = new();
+            public decimal Total
+            {
+                get { return 0; }
+            }
+            public static bool operator ==(Order a, Order b) => true;
+            public static bool operator !=(Order a, Order b) => false;
+        }
+    }
+}

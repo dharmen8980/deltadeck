@@ -11,12 +11,6 @@ export function basename(path: string): string {
   return i < 0 ? path : path.slice(i + 1);
 }
 
-export function extname(path: string): string {
-  const name = basename(path);
-  const i = name.lastIndexOf(".");
-  return i <= 0 ? "" : name.slice(i + 1).toLowerCase();
-}
-
 /** Ancestor directories of a path, outermost first: "a/b/c.md" -> ["a", "a/b"]. */
 export function ancestors(path: string): string[] {
   const parts = path.split("/").filter(Boolean);
@@ -41,7 +35,7 @@ export function normalize(path: string): string | null {
 }
 
 /** Join a root-relative directory with a relative reference ("./x", "../y/z.md", "z.md"). */
-export function joinRelative(baseDir: string, rel: string): string | null {
+function joinRelative(baseDir: string, rel: string): string | null {
   if (rel.startsWith("/")) return normalize(rel); // treat "/x" as root-relative
   return normalize(baseDir ? `${baseDir}/${rel}` : rel);
 }

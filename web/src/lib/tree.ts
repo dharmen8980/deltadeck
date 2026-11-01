@@ -1,4 +1,4 @@
-import type { FileEntry, FileKind, TreeResponse } from "@/lib/api";
+import type { FileEntry, TreeResponse } from "@/lib/api";
 import { basename, dirname } from "@/lib/paths";
 
 export interface DirNode {
@@ -86,7 +86,3 @@ export function filterFiles(root: DirNode, keep: (f: FileEntry) => boolean): Dir
   return walk(root) ?? root;
 }
 
-/** The tree with only files of the given kinds. Empty set: no filter. */
-export function filterKinds(root: DirNode, kinds: ReadonlySet<FileKind>): DirNode {
-  return kinds.size ? filterFiles(root, (f) => kinds.has(f.kind)) : root;
-}

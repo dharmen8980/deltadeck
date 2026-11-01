@@ -6,17 +6,19 @@ import type { Components } from "react-markdown";
 import { toJsxRuntime, type Components as JsxComponents } from "hast-util-to-jsx-runtime";
 import { DownloadIcon, ImageOffIcon } from "lucide-react";
 import { useFileChange } from "@/components/changes/changes-context";
+import { useFindSource } from "@/components/find/use-find-source";
 import { TocInline, TocPanel, type TocHeading } from "@/components/toc";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { useHighlight } from "@/hooks/use-highlight";
 import { useRoute } from "@/hooks/use-route";
 import { api, errorMessage, rawUrl, type DocxResponse } from "@/lib/api";
+import { parseLineHash } from "@/lib/code-lines";
 import { blockMarks, normalizeText, type ChangeMarks } from "@/lib/diff";
+import { DOC_SKIP } from "@/lib/find/skip";
 import { docxTree } from "@/lib/docx-hast";
 import { rehypeChangeMarks } from "@/lib/rehype-change-marks";
 import { stickyScroll } from "@/lib/sticky-scroll";
-import { parseLineHash } from "./code-viewer";
 import { useAsync, ViewerError, ViewerLoading, type ViewerProps } from "./common";
 import { ARTICLE_CLASS, markdownComponents, type MarkdownComponentOptions } from "./markdown-viewer";
 
@@ -172,6 +174,8 @@ export function DocxViewer({ file, reloadKey }: ViewerProps) {
   }, [data, hash, file.path]);
 
   useHighlight(articleRef, hl, data, hll);
+  // Find in the file (components/find/): the rendered text, code blocks, tables and diagrams.
+  useFindSource(() => ({ kind: "dom", root: () => articleRef.current, skip: DOC_SKIP }), []);
 
   if (!data) {
     if (error) return <ViewerError message={errorMessage(error)} file={file} />;
@@ -180,7 +184,7 @@ export function DocxViewer({ file, reloadKey }: ViewerProps) {
 
   return (
     <div className="flex justify-center gap-8 px-4 py-6 md:px-8">
-      <div className="print-area min-w-0 max-w-4xl flex-1">
+      <div className="print-area min-w-0 max-w-[var(--reading-width,56rem)] flex-1">
         <Notes data={data} file={file} />
         <TocInline headings={headings} words={words} onSelect={selectHeading} />
         <article ref={articleRef} className={ARTICLE_CLASS}>

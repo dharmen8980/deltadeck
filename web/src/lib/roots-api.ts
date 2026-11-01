@@ -90,8 +90,3 @@ export const rootsApi = {
   switch: (path: string) => request<{ current?: string }>("POST", "/api/roots/switch", { path }),
   forget: (path: string) => request<unknown>("POST", "/api/roots/forget", { path }),
 };
-
-export const getRoots = rootsApi.get;
-export const pickRoot = rootsApi.pick;
-export const switchRoot = rootsApi.switch;
-export const forgetRoot = rootsApi.forget;

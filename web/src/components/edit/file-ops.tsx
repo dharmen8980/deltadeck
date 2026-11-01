@@ -19,7 +19,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Input } from "@/components/ui/input";
 import { ApiError, errorMessage, type AppConfig, type TreeResponse } from "@/lib/api";
 import { copyText } from "@/lib/clipboard";
-import { editApi, foldName, nameRules, uploadProblem, validateName } from "@/lib/edit-api";
+import { editApi, editMaxBytes, foldName, nameRules, uploadProblem, validateName } from "@/lib/edit-api";
 import { basename, dirname } from "@/lib/paths";
 import { useReturnFocus } from "@/lib/return-focus";
 import { EditOpsContext, ownMoves, type EditOps } from "./edit-context";
@@ -486,6 +486,7 @@ export function FileOpsProvider(props: FileOpsProviderProps) {
         open={historyPath !== null}
         onOpenChange={(o) => !o && setHistoryPath(null)}
         getCurrentText={getCurrentText}
+        maxBytes={editMaxBytes(config)}
         hasUnsaved={() => (historyPath ? hasUnsaved(historyPath) : false)}
       />
       <TrashSheet

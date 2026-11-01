@@ -3,12 +3,14 @@
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { useTheme } from "next-themes";
 import { AlertTriangleIcon, CodeIcon, ImageIcon } from "lucide-react";
+import { useFindSource } from "@/components/find/use-find-source";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { DiagramPreviewDialog, registerPreview, svgNaturalSize, ZoomableSvg } from "@/components/zoomable-svg";
 import { useHighlight } from "@/hooks/use-highlight";
 import { useRoute } from "@/hooks/use-route";
 import { api, errorMessage } from "@/lib/api";
+import { DOC_SKIP } from "@/lib/find/skip";
 import { CodeLines } from "./code-viewer";
 import { useAsync, ViewerError, ViewerLoading, type ViewerProps } from "./common";
 
@@ -53,7 +55,7 @@ function isExternal(url: string): boolean {
  * `node@{ img: "https://..." }` and `<img src="https://...">` in labels.
  * Returns the rewritten source and the list of blocked URLs.
  */
-export function stripExternalImages(source: string): { source: string; blocked: string[] } {
+function stripExternalImages(source: string): { source: string; blocked: string[] } {
   const blocked: string[] = [];
   let out = source.replace(
     /(\bimg\s*:\s*)(["'])([^"'\n]*)\2/g,
@@ -133,7 +135,7 @@ type Result = { key: string; source: string; svg?: string; printSvg?: string; bl
 const unquote = (t: string) => t.trim().replace(/^(["'])(.*)\1$/, "$2").trim();
 
 /** Title of a diagram: front-matter `title:`, `accTitle:`, or a `title ...` line (gantt, pie, ...). */
-export function diagramTitle(source: string): string {
+function diagramTitle(source: string): string {
   const fm = /^\s*---[ \t]*\r?\n([\s\S]*?)\r?\n[ \t]*---/.exec(source);
   const fmTitle = fm ? /^\s*title\s*:\s*(.+?)\s*$/m.exec(fm[1]) : null;
   if (fmTitle) return unquote(fmTitle[1]);
@@ -285,6 +287,8 @@ export function MermaidViewer({ file, reloadKey }: ViewerProps) {
   const { hl, hll } = useRoute();
   const hlRef = useRef<HTMLDivElement>(null);
   useHighlight(hlRef, hl, `${tab}:${data?.text ?? ""}`, hll);
+  // Find in the file (components/find/): the diagram's text (labels in HTML or SVG), or the source.
+  useFindSource(() => ({ kind: "dom", root: () => hlRef.current, skip: DOC_SKIP }), []);
   if (!data) {
     if (error) return <ViewerError message={errorMessage(error)} file={file} />;
     return loading ? <ViewerLoading /> : null;

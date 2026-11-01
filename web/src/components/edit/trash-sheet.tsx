@@ -19,9 +19,10 @@ import { Input } from "@/components/ui/input";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { ApiError, errorMessage, formatBytes } from "@/lib/api";
+import { ApiError, errorMessage } from "@/lib/api";
+import { formatBytes, formatWhen, whenMs } from "@/lib/format";
 import { useReturnFocus } from "@/lib/return-focus";
-import { editApi, formatWhen, validatePath, whenMs, type AuditEntry, type NameRules, type TrashItem } from "@/lib/edit-api";
+import { editApi, validatePath, type AuditEntry, type NameRules, type TrashItem } from "@/lib/edit-api";
 
 type Confirm = { kind: "purge"; item: TrashItem } | { kind: "empty" };
 

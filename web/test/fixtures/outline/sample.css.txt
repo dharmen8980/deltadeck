@@ -1,0 +1,13 @@
+@import url("x.css");
+@layer base, components;
+:root { --x: 1; }
+.a > .b, #c:hover::before { color: red; }
+@media (max-width: 600px) and (prefers-color-scheme: dark) {
+  .d { color: blue; }
+  @supports (display: grid) { .e { display: grid; } }
+}
+@keyframes spin { from { transform: rotate(0); } to { transform: rotate(360deg); } }
+@font-face { font-family: X; src: url(a.woff2); }
+@layer components { .btn { padding: 0; } }
+@container sidebar (min-width: 400px) { .card { x: y; } }
+.nest { color: red; &:hover { color: blue; } .child { a: b; } }

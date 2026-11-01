@@ -1,5 +1,5 @@
 // Pure parts of the What's new feed: the list of rows, and the lazy summary loader (bounded
-// concurrency, cached by version). No `@/` or relative value imports: unit tested with node --test.
+// concurrency, cached by version). No `@/` imports (relative `.ts` ones are fine): unit tested with node --test.
 
 /** A mode of the feed panel: changed since viewed, or uncommitted (git status against the last commit). */
 export type FeedModeId = "changes" | "uncommitted";

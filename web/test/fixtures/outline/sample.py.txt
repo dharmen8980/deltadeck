@@ -1,0 +1,59 @@
+"""Module docstring with def fake(): and class Fake: inside."""
+from __future__ import annotations
+
+import functools
+
+
+@functools.lru_cache(maxsize=None)
+@other.decorator(
+    "arg",
+)
+def cached(n: int) -> int:
+    return n
+
+
+class Service(Base, metaclass=Meta):
+    """class NotAClass: ..."""
+
+    retries: int = 3
+
+    def __init__(self, url: str) -> None:
+        self.url = url
+
+    @property
+    def name(self) -> str:
+        return "x"
+
+    @name.setter
+    def name(self, value: str) -> None:
+        pass
+
+    async def fetch(self, *args, **kwargs):
+        def retry():
+            def backoff():
+                pass
+        return retry
+
+    class Config:
+        frozen = True
+
+        def validate(self): ...
+
+
+def outer():
+    class Local:
+        def m(self): pass
+    return Local
+
+
+try:
+    def fast(): ...
+except ImportError:
+    def fast(): ...
+
+if __name__ == "__main__":
+    def main():
+        print("def nope(): pass")
+    main()
+
+square = lambda x: x * x

@@ -3,8 +3,9 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { api, ApiError, type FileInfo, type GitFileResponse, type GitStatusFile, type GitStatusResponse } from "@/lib/api";
 import { isMarkdownText, isTracked, trackedMax } from "@/lib/change-rules";
-import { diffVersions, normalizeText } from "@/lib/diff";
+import { normalizeText } from "@/lib/diff";
 import type { FileChangeState } from "@/components/changes/changes-context";
+import { useVersionDiffs } from "@/components/changes/use-version-diffs";
 
 /** What the open file shows instead of its plain view: the diff against the last commit, or blame. */
 export type GitViewMode = "compare" | "blame";
@@ -138,11 +139,8 @@ export function useGitCompare(path: string, file: FileInfo | null, active: boole
   const currentText = shown?.text ?? null;
   const same = baseText !== null && currentText !== null && normalizeText(baseText) === normalizeText(currentText);
   const isMarkdown = Boolean(file && isMarkdownText(file.kind));
-  const both = !same && baseText !== null && currentText !== null;
-  const diffs = useMemo(
-    () => (both ? diffVersions(baseText as string, currentText as string, isMarkdown) : null),
-    [both, baseText, currentText, isMarkdown],
-  );
+  // As the "since last viewed" diffs: in render for markdown and small texts, otherwise after paint.
+  const { diffs, pending: diffPending } = useVersionDiffs(baseText, currentText, active && !same, isMarkdown);
 
   return useMemo<GitCompareState | null>(() => {
     if (!active) return null;
@@ -156,6 +154,7 @@ export function useGitCompare(path: string, file: FileInfo | null, active: boole
       tooLarge: tooLarge || Boolean(blob?.tooLarge),
       lineDiff: diffs?.lineDiff ?? null,
       markdownDiff: diffs?.markdownDiff ?? null,
+      diffPending,
       // A deleted file has nothing else to show.
       showDiff: showDiff || isDeleted,
       setShowDiff,
@@ -168,5 +167,5 @@ export function useGitCompare(path: string, file: FileInfo | null, active: boole
       noText,
       head,
     };
-  }, [active, head, baseText, currentText, file, blob, tooLarge, diffs, showDiff, isDeleted, close, shown, failed, key, same, isNew, noText]);
+  }, [active, head, baseText, currentText, file, blob, tooLarge, diffs, showDiff, isDeleted, close, shown, failed, key, same, isNew, noText, diffPending]);
 }

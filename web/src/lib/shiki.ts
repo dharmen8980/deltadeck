@@ -1,44 +1,13 @@
 // Fine-grained shiki bundle: core + JavaScript regex engine (no WASM, so no
 // 'wasm-unsafe-eval' in the CSP) + only the grammars we need.
 import type { HighlighterCore, ShikiTransformer } from "shiki/core";
+import { isDockerfile, languageFor, LANGUAGES, type ShikiLang } from "@/lib/languages";
 
-export type ShikiLang =
-  | "python"
-  | "shellscript"
-  | "json"
-  | "yaml"
-  | "toml"
-  | "typescript"
-  | "javascript"
-  | "tsx"
-  | "sql"
-  | "ini"
-  | "html"
-  | "css"
-  | "dockerfile"
-  | "markdown";
+export type { ShikiLang };
 
-const EXT_LANG: Record<string, ShikiLang> = {
-  py: "python",
-  sh: "shellscript",
-  bash: "shellscript",
-  zsh: "shellscript",
-  json: "json",
-  yaml: "yaml",
-  yml: "yaml",
-  toml: "toml",
-  ts: "typescript",
-  js: "javascript",
-  mjs: "javascript",
-  tsx: "tsx",
-  sql: "sql",
-  ini: "ini",
-  cfg: "ini",
-  html: "html",
-  css: "css",
-  md: "markdown",
-  markdown: "markdown",
-};
+const EXT_LANG: Record<string, ShikiLang> = Object.fromEntries(
+  Object.entries(LANGUAGES).flatMap(([ext, row]) => (row.shiki ? [[ext, row.shiki]] : [])),
+);
 
 const FENCE_ALIASES: Record<string, ShikiLang> = {
   ...EXT_LANG,
@@ -60,8 +29,8 @@ const FENCE_ALIASES: Record<string, ShikiLang> = {
 };
 
 export function langForFile(name: string, ext: string): ShikiLang | null {
-  if (name === "Dockerfile" || name.startsWith("Dockerfile.")) return "dockerfile";
-  return EXT_LANG[ext.toLowerCase()] ?? null;
+  // A known extension wins (Dockerfile.py is python), as in the server's kind_of.
+  return languageFor(ext)?.shiki ?? (isDockerfile(name) ? "dockerfile" : null);
 }
 
 export function langForFence(lang: string): ShikiLang | null {
@@ -70,7 +39,7 @@ export function langForFence(lang: string): ShikiLang | null {
 
 let highlighterPromise: Promise<HighlighterCore> | null = null;
 
-export function getHighlighter(): Promise<HighlighterCore> {
+function getHighlighter(): Promise<HighlighterCore> {
   if (!highlighterPromise) {
     highlighterPromise = (async () => {
       const [{ createHighlighterCore }, { createJavaScriptRegexEngine }] = await Promise.all([

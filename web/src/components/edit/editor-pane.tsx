@@ -36,17 +36,21 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Toggle } from "@/components/ui/toggle";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { TooltipButton } from "@/components/tooltip-button";
 import { ViewerError } from "@/components/viewers/common";
 import { ARTICLE_CLASS, MarkdownMarkup, markdownComponents } from "@/components/viewers/markdown-viewer";
 import { MermaidDiagram } from "@/components/viewers/mermaid-viewer";
 import { useRoute } from "@/hooks/use-route";
 import { ApiError, errorMessage, type FileInfo } from "@/lib/api";
 import { copyText } from "@/lib/clipboard";
-import { editApi, EDIT_MAX_BYTES, loadEditable, utf8Length, type EditableText } from "@/lib/edit-api";
+import { editApi, editMaxBytes, loadEditable, sizeLimitLabel, utf8Length, type EditableText } from "@/lib/edit-api";
 import { editorLangFor } from "@/lib/editor-lang";
+import { isTypingTarget } from "@/lib/keys";
 import { dirname } from "@/lib/paths";
+import { readItem, writeItem } from "@/lib/prefs";
 import { cn } from "@/lib/utils";
 import type { CodeEditorHandle } from "./code-editor";
+import { useEditOps } from "./edit-context";
 import { DiffView } from "@/components/diff/diff-view";
 
 const CodeEditor = lazy(() => import("./code-editor"));
@@ -112,26 +116,8 @@ const IMAGE_EXT: Record<string, string> = {
 };
 
 function readPref<T extends string>(key: string, allowed: readonly T[], fallback: T): T {
-  if (typeof window === "undefined") return fallback;
-  const v = window.localStorage.getItem(key);
+  const v = readItem(key);
   return (allowed as readonly string[]).includes(v ?? "") ? (v as T) : fallback;
-}
-
-function ToolButton({
-  label,
-  children,
-  ...props
-}: React.ComponentProps<typeof Button> & { label: string }) {
-  return (
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <Button variant="ghost" size="icon-sm" aria-label={label} {...props}>
-          {children}
-        </Button>
-      </TooltipTrigger>
-      <TooltipContent>{label}</TooltipContent>
-    </Tooltip>
-  );
 }
 
 export interface EditorPaneProps {
@@ -190,25 +176,28 @@ export function EditorPane({ path, file, onDirtyChange, onExit, onOpenHistory, o
   const missingRef = useRef(false);
   const dirtyRef = useRef(false);
   const pathRef = useRef(path);
+  const maxBytes = editMaxBytes(useEditOps()?.config);
+  const maxBytesRef = useRef(maxBytes);
   const liveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
     pathRef.current = path;
+    maxBytesRef.current = maxBytes;
     missingRef.current = missing;
   });
 
   const setMode = (m: Mode) => {
     setModeState(m);
-    window.localStorage.setItem("viewer.editMode", m);
+    writeItem("viewer.editMode", m);
   };
   const setWrap = (w: boolean) => {
     setWrapState(w);
-    window.localStorage.setItem(`viewer.editWrap.${isMd || isMmd ? "doc" : "code"}`, w ? "on" : "off");
+    writeItem(`viewer.editWrap.${isMd || isMmd ? "doc" : "code"}`, w ? "on" : "off");
   };
 
   // Load the exact bytes once per edit session (the path may later change through a rename).
   useEffect(() => {
     const ctrl = new AbortController();
-    loadEditable(pathRef.current, ctrl.signal)
+    loadEditable(pathRef.current, ctrl.signal, maxBytesRef.current)
       .then((t) => {
         baseRef.current = { sha256: t.sha256, text: t.text };
         setLiveText(t.text);
@@ -301,7 +290,7 @@ export function EditorPane({ path, file, onDirtyChange, onExit, onOpenHistory, o
       const gen = saveGenRef.current;
       let theirs: EditableText;
       try {
-        theirs = await loadEditable(pathRef.current);
+        theirs = await loadEditable(pathRef.current, undefined, maxBytesRef.current);
       } catch (e) {
         if (e instanceof ApiError && e.status === 404 && gen === saveGenRef.current && !savingRef.current) {
           setMissing(true);
@@ -374,8 +363,8 @@ export function EditorPane({ path, file, onDirtyChange, onExit, onOpenHistory, o
           return false;
         }
       }
-      if (utf8Length(content) > EDIT_MAX_BYTES) {
-        toast.error("Too large to save", { description: "The editor saves files up to 2 MB." });
+      if (utf8Length(content) > maxBytesRef.current) {
+        toast.error("Too large to save", { description: `The editor saves files up to ${sizeLimitLabel(maxBytesRef.current)}.` });
         return false;
       }
       const target = pathRef.current;
@@ -419,7 +408,7 @@ export function EditorPane({ path, file, onDirtyChange, onExit, onOpenHistory, o
         return true;
       } catch (e) {
         if (e instanceof ApiError && e.status === 409) {
-          const theirs = await loadEditable(target).catch(() => null);
+          const theirs = await loadEditable(target, undefined, maxBytesRef.current).catch(() => null);
           if (adoptIfEqual(theirs)) {
             // The file on disk already holds exactly the editor's text.
             ok = true;
@@ -482,8 +471,7 @@ export function EditorPane({ path, file, onDirtyChange, onExit, onOpenHistory, o
       if (e.key !== "Escape" || e.defaultPrevented || e.isComposing) return;
       const t = e.target instanceof Element ? e.target : null;
       if (t?.closest(".cm-editor")) return;
-      if (t && (t.closest("input, textarea, select, [contenteditable='true']") || t.closest("[role=menu], [role=listbox]")))
-        return;
+      if (isTypingTarget(t) || t?.closest("[role=menu], [role=listbox]")) return;
       // capture phase: a dialog, menu or popover that is about to close on this Esc is still here
       if (
         document.querySelector(
@@ -511,7 +499,7 @@ export function EditorPane({ path, file, onDirtyChange, onExit, onOpenHistory, o
     await doSave(true);
   };
   const reloadTheirs = async () => {
-    const theirs = conflict?.theirs ?? (await loadEditable(pathRef.current).catch(() => null));
+    const theirs = conflict?.theirs ?? (await loadEditable(pathRef.current, undefined, maxBytesRef.current).catch(() => null));
     if (!theirs) {
       toast.error("Could not load the version on disk");
       return;
@@ -649,7 +637,7 @@ export function EditorPane({ path, file, onDirtyChange, onExit, onOpenHistory, o
           </TooltipTrigger>
           <TooltipContent>Wrap long lines</TooltipContent>
         </Tooltip>
-        <ToolButton
+        <TooltipButton
           label="Find and replace (⌘F)"
           onClick={() => {
             if (mode === "preview") setMode("split");
@@ -657,7 +645,7 @@ export function EditorPane({ path, file, onDirtyChange, onExit, onOpenHistory, o
           }}
         >
           <SearchIcon />
-        </ToolButton>
+        </TooltipButton>
         {isJson && loaded ? (
           liveJson ? (
             <button
@@ -683,9 +671,9 @@ export function EditorPane({ path, file, onDirtyChange, onExit, onOpenHistory, o
         <span className="mr-1 hidden text-xs text-muted-foreground sm:inline" aria-live="polite">
           {saving ? "Saving..." : dirty ? "Unsaved changes" : loaded ? "All changes saved" : ""}
         </span>
-        <ToolButton label="Version history" onClick={() => onOpenHistory(path)}>
+        <TooltipButton label="Version history" onClick={() => onOpenHistory(path)}>
           <HistoryIcon />
-        </ToolButton>
+        </TooltipButton>
         <Button size="sm" variant={dirty ? "default" : "outline"} onClick={() => void doSave(false)} disabled={!loaded || saving}>
           {saving ? <Loader2Icon className="animate-spin" /> : <SaveIcon />} Save
           <kbd className="ml-1 hidden font-mono text-[10px] opacity-70 md:inline">⌘S</kbd>

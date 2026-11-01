@@ -33,6 +33,8 @@ import { toml } from "@codemirror/legacy-modes/mode/toml";
 import { xml } from "@codemirror/legacy-modes/mode/xml";
 import {
   closeSearchPanel,
+  findNext,
+  findPrevious,
   highlightSelectionMatches,
   openSearchPanel,
   search,
@@ -54,6 +56,9 @@ import {
 } from "@codemirror/view";
 import { tags as t } from "@lezer/highlight";
 import type { EditorLang } from "@/lib/editor-lang";
+import { findKeyAction, isMacPlatform, menuEchoFilter } from "@/lib/find/keys";
+import { FIND_EVENT, type FindAction } from "@/lib/find/registry";
+import { isTypingTarget } from "@/lib/keys";
 
 function langExtension(lang: EditorLang): Extension {
   switch (lang) {
@@ -135,8 +140,36 @@ function baseTheme(dark: boolean): Extension {
       },
       ".cm-panels.cm-panels-top": { borderBottom: "1px solid var(--border)" },
       ".cm-panels.cm-panels-bottom": { borderTop: "1px solid var(--border)" },
-      ".cm-panel.cm-search": { padding: "6px 8px", fontSize: "12px" },
       ".cm-panel.cm-search input, .cm-panel.cm-search button": { fontSize: "12px" },
+      ".cm-panel.cm-search": { padding: "6px 28px 6px 8px", fontSize: "12px", fontFamily: "var(--font-sans)" },
+      ".cm-panel.cm-search label": {
+        display: "inline-flex",
+        alignItems: "center",
+        gap: "4px",
+        margin: "0 6px",
+        color: "var(--muted-foreground)",
+        fontSize: "12px",
+      },
+      ".cm-panel.cm-search input[type=checkbox]": { accentColor: "var(--primary)", margin: "0" },
+      ".cm-panel.cm-search [name=close]": {
+        top: "6px",
+        right: "8px",
+        width: "20px",
+        height: "20px",
+        borderRadius: "4px",
+        color: "var(--muted-foreground)",
+        fontSize: "16px",
+        lineHeight: "18px",
+        cursor: "pointer",
+      },
+      ".cm-panel.cm-search [name=close]:hover": { backgroundColor: "var(--accent)", color: "var(--foreground)" },
+      ".cm-textfield:focus": {
+        outline: "none",
+        borderColor: "var(--ring)",
+        boxShadow: "0 0 0 2px color-mix(in oklch, var(--ring) 40%, transparent)",
+      },
+      ".cm-button:hover": { backgroundColor: "var(--accent)", color: "var(--accent-foreground)" },
+      ".cm-button:focus-visible": { outline: "2px solid var(--ring)", outlineOffset: "1px" },
       ".cm-textfield": {
         backgroundColor: "var(--background)",
         color: "var(--foreground)",
@@ -305,7 +338,8 @@ export default function CodeEditor({
         crosshairCursor(),
         highlightActiveLine(),
         highlightSelectionMatches(),
-        search({ top: true }),
+        // the current match in the middle, as in the viewers' find bar
+        search({ top: true, scrollToMatch: (range) => EditorView.scrollIntoView(range, { y: "center" }) }),
         Prec.highest(
           keymap.of([
             {
@@ -378,6 +412,41 @@ export default function CodeEditor({
     return () => {
       view.destroy();
       viewRef.current = null;
+    };
+  }, []);
+
+  // Find while editing is CodeMirror's search panel (searchKeymap, inside the editor). The same
+  // shortcuts with the focus elsewhere in the page (the preview), and the desktop Edit menu, open
+  // or drive that panel too; the page's find bar (components/find/) stays off meanwhile.
+  useEffect(() => {
+    const mac = isMacPlatform();
+    const echo = menuEchoFilter();
+    const act = (action: FindAction) => {
+      const view = viewRef.current;
+      if (!view) return;
+      if (action === "open") openSearchPanel(view);
+      else if (action === "next") findNext(view);
+      else findPrevious(view);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      const action = findKeyAction(e, mac);
+      const view = viewRef.current;
+      if (!action || !view) return;
+      echo.key(action);
+      // inside the editor CodeMirror's keymap runs; other text fields keep their keys
+      if (e.defaultPrevented || view.dom.contains(e.target as Node) || isTypingTarget(e.target)) return;
+      e.preventDefault();
+      act(action);
+    };
+    const onMenu = (e: Event) => {
+      const action = (e as CustomEvent<unknown>).detail;
+      if ((action === "open" || action === "next" || action === "prev") && echo.menu(action)) act(action);
+    };
+    window.addEventListener("keydown", onKey, true);
+    window.addEventListener(FIND_EVENT, onMenu);
+    return () => {
+      window.removeEventListener("keydown", onKey, true);
+      window.removeEventListener(FIND_EVENT, onMenu);
     };
   }, []);
 

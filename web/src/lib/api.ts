@@ -31,6 +31,8 @@ export interface AppConfig {
   git_enabled?: boolean;
   repo_prefix: string;
   search_max_bytes: number;
+  /** served by the desktop app (its server takes no command-line options) */
+  desktop?: boolean;
   version: string | number;
   /** Tier 3 (opt-in editing). Absent on older/read-only servers: treat as false. */
   edit_enabled?: boolean;
@@ -40,6 +42,8 @@ export interface AppConfig {
   ignore_patterns?: string[];
   upload_ext?: string[];
   upload_max_bytes?: number;
+  /** largest file the editor opens and saves (absent on older servers: EDIT_MAX_BYTES) */
+  edit_max_bytes?: number;
 }
 
 export interface FileEntry {
@@ -147,6 +151,11 @@ export interface ContentHit {
 
 export interface SearchResponse {
   indexing: boolean;
+  /** content-search coverage (older servers omit these) */
+  indexed_files?: number;
+  indexable_files?: number;
+  limit_reached?: boolean;
+  limit_reason?: "files" | "bytes" | "disk" | "error" | null;
   names: NameHit[];
   content: ContentHit[];
 }
@@ -284,6 +293,44 @@ async function getJson<T>(url: string, signal?: AbortSignal): Promise<T> {
 
 export const rawUrl = (path: string) => `/api/raw${qs({ path })}`;
 
+/**
+ * The first `maxBytes` of a file as UTF-8 text (invalid bytes replaced, like /api/text), cut at
+ * the last line break when there was more. For find in a large file whose text is not all loaded.
+ */
+export async function rawText(path: string, maxBytes: number, signal?: AbortSignal): Promise<{ text: string; truncated: boolean }> {
+  let res: Response;
+  try {
+    res = await fetch(rawUrl(path), { signal, cache: "no-store", credentials: "same-origin" });
+  } catch (e) {
+    if ((e as Error).name === "AbortError") throw e;
+    throw new ApiError(0, "Cannot reach the viewer server.", null);
+  }
+  if (!res.ok || !res.body) throw new ApiError(res.status, `Could not read the file (${res.status})`, null);
+  const reader = res.body.getReader();
+  const dec = new TextDecoder();
+  const parts: string[] = [];
+  let got = 0;
+  let truncated = false;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    const take = Math.min(value.length, maxBytes - got);
+    parts.push(dec.decode(value.subarray(0, take), { stream: true }));
+    got += take;
+    if (take < value.length || got >= maxBytes) {
+      truncated = take < value.length || !(await reader.read()).done;
+      void reader.cancel().catch(() => undefined);
+      break;
+    }
+  }
+  let text = parts.join("") + dec.decode();
+  if (truncated) {
+    const nl = text.lastIndexOf("\n");
+    text = nl >= 0 ? text.slice(0, nl + 1) : "";
+  }
+  return { text, truncated };
+}
+
 export interface PdfOptions {
   paper: "a4" | "letter";
   orientation: "auto" | "portrait" | "landscape";
@@ -338,37 +385,4 @@ export function errorMessage(e: unknown): string {
   if (e instanceof ApiError) return e.message;
   if (e instanceof Error) return e.message;
   return String(e);
-}
-
-export function formatBytes(n: number): string {
-  if (!Number.isFinite(n)) return "?";
-  if (n < 1024) return `${n} B`;
-  const units = ["KB", "MB", "GB"];
-  let v = n / 1024;
-  let i = 0;
-  while (v >= 1024 && i < units.length - 1) {
-    v /= 1024;
-    i++;
-  }
-  return `${v < 10 ? v.toFixed(1) : Math.round(v)} ${units[i]}`;
-}
-
-export function formatTime(mtime: number): string {
-  const d = new Date(mtime * 1000);
-  return d.toLocaleString(undefined, {
-    year: "numeric",
-    month: "short",
-    day: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
-}
-
-export function formatRelative(mtime: number): string {
-  const diff = Date.now() / 1000 - mtime;
-  if (diff < 60) return "just now";
-  if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
-  if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
-  if (diff < 86400 * 30) return `${Math.floor(diff / 86400)}d ago`;
-  return new Date(mtime * 1000).toLocaleDateString();
 }

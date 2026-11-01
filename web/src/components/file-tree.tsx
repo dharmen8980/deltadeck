@@ -72,17 +72,18 @@ import {
   SidebarMenuItem,
   SidebarMenuSkeleton,
   SidebarMenuSub,
-  SidebarRail,
   useSidebar,
 } from "@/components/ui/sidebar";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { FileKindIcon } from "@/components/file-icon";
+import { SidebarEdge } from "@/components/resize-handle";
 import { useChanges } from "@/components/changes/changes-context";
 import { useChangesSource, WhatsNewPanel } from "@/components/changes/whats-new";
 import { useGit } from "@/components/git/git-context";
 import { useUncommittedSource } from "@/components/git/uncommitted-source";
+import { formatRelative } from "@/lib/format";
 import { isTypingTarget } from "@/lib/keys";
-import { formatRelative, type FileEntry, type FileKind, type TreeResponse } from "@/lib/api";
+import { type FileEntry, type FileKind, type TreeResponse } from "@/lib/api";
 import { changedDirsOf } from "@/lib/change-rules";
 import { dirname, viewerHref } from "@/lib/paths";
 import { filterFiles, sortDirs, sortFiles, type DirNode, type SortMode } from "@/lib/tree";
@@ -878,7 +879,7 @@ export function FileTree(props: FileTreeProps) {
           </SidebarMenu>
         </SidebarFooter>
       ) : null}
-      <SidebarRail />
+      <SidebarEdge />
     </Sidebar>
   );
 }

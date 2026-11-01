@@ -1,0 +1,60 @@
+/*
+ * class Commented { void no() {} }
+ */
+package org.acme.orders;
+
+import java.util.List;
+
+/** Javadoc mentioning void fake() {} */
+@Entity
+@Table(
+    name = "orders"
+)
+public final class Order implements Comparable<Order> {
+    public static final int MAX = 10, MIN = 1;
+    private String text = """
+        class InTextBlock { }
+        """;
+
+    public Order() {
+        this(0);
+    }
+
+    Order(int id) {
+        Runnable r = () -> System.out.println("x");
+        class LocalHelper {}
+    }
+
+    @Override
+    public int compareTo(Order other) {
+        return 0;
+    }
+
+    public <T extends Comparable<? super T>> List<T> sorted(List<T> in) throws Exception {
+        return in;
+    }
+
+    public static class Builder {
+        private int id;
+        public Builder id(int id) { this.id = id; return this; }
+        public Order build() { return new Order(id); }
+    }
+
+    public enum Status {
+        NEW { @Override boolean open() { return true; } },
+        DONE;
+        boolean open() { return false; }
+    }
+
+    sealed interface Shape permits Circle {
+        default double area() { return 0; }
+        double perimeter();
+    }
+
+    record Circle(double r) implements Shape {
+        Circle {
+            if (r < 0) throw new IllegalArgumentException();
+        }
+        public double perimeter() { return 2 * Math.PI * r; }
+    }
+}

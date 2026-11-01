@@ -13,6 +13,11 @@ export interface ViewerProps {
   reloadKey: number;
 }
 
+// What the find bar says where there is no text to search (a "none" find source).
+export const NO_FIND_PDF = "No text to search here: click into the PDF and use its own find";
+export const NO_FIND_IMAGE = "No text to search in an image";
+export const NO_FIND_BINARY = "No text to search: this file cannot be previewed";
+
 export function ViewerError({
   title = "Could not display this file",
   message,

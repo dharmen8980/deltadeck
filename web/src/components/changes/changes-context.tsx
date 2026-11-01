@@ -6,7 +6,8 @@ import type { ChangeTracker } from "@/hooks/use-change-tracker";
 import { api, ApiError, type FileInfo } from "@/lib/api";
 import { isChangedSince, isMarkdownText, isTracked, trackedMax } from "@/lib/change-rules";
 import { basename } from "@/lib/paths";
-import { diffVersions, normalizeText, type LineDiff, type MarkdownBlockDiff } from "@/lib/diff";
+import { normalizeText, type LineDiff, type MarkdownBlockDiff } from "@/lib/diff";
+import { useVersionDiffs } from "./use-version-diffs";
 
 /** The root-level tracker; null when the feature is off (no history on the server, no root). */
 export const ChangesContext = createContext<ChangeTracker | null>(null);
@@ -30,6 +31,8 @@ export interface FileChangeState {
   lineDiff: LineDiff | null;
   /** markdown (and .docx, as its markdown) only */
   markdownDiff: MarkdownBlockDiff | null;
+  /** the diffs are being computed (after paint, for kinds other than markdown) */
+  diffPending?: boolean;
   showDiff: boolean;
   setShowDiff(on: boolean): void;
   markSeen(): void;
@@ -213,13 +216,9 @@ export function useFileChanges(file: FileInfo | null): FileChangeState | null {
     setBase((b) => (typeof b === "object" ? { ...b, mtime: v.mtime, size: v.size, textMtime: v.mtime, text: v.text } : b));
   }, [tracker, current, differs, sameText, path]);
 
-  // 5. Diffs (pure, so StrictMode double memo calls are harmless), time-boxed (diffVersions).
-  const both = changed && baseText !== null && currentText !== null;
-  const isMarkdown = isMarkdownText(kind);
-  const diffs = useMemo(
-    () => (both ? diffVersions(baseText as string, currentText as string, isMarkdown) : null),
-    [both, baseText, currentText, isMarkdown],
-  );
+  // 5. Diffs (pure, so StrictMode double memo calls are harmless), time-boxed (diffVersions):
+  // in render for markdown and small texts, otherwise after paint (use-version-diffs.ts).
+  const { diffs, pending: diffPending } = useVersionDiffs(baseText, currentText, changed, isMarkdownText(kind));
   const lineDiff = diffs?.lineDiff ?? null;
   const markdownDiff = diffs?.markdownDiff ?? null;
 
@@ -270,9 +269,10 @@ export function useFileChanges(file: FileInfo | null): FileChangeState | null {
       tooLarge,
       lineDiff,
       markdownDiff,
+      diffPending,
       showDiff,
       setShowDiff,
       markSeen,
     };
-  }, [tracker, file, changed, baseObj, baseText, currentText, current, tooLarge, lineDiff, markdownDiff, showDiff, markSeen]);
+  }, [tracker, file, changed, baseObj, baseText, currentText, current, tooLarge, lineDiff, markdownDiff, diffPending, showDiff, markSeen]);
 }

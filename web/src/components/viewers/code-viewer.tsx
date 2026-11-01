@@ -1,47 +1,36 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useRoute } from "@/hooks/use-route";
 import { api, ApiError, errorMessage } from "@/lib/api";
 import { highlight, langForFile, type ShikiLang } from "@/lib/shiki";
 import { cn } from "@/lib/utils";
+import { CodeWithOutline } from "@/components/code-outline";
+import { useLineMarks } from "@/components/changes/use-line-marks";
+import { useFindId, useFindSource } from "@/components/find/use-find-source";
+import { HIGHLIGHT_MAX_BYTES, parseLineHash, plainHtml } from "@/lib/code-lines";
+import { applyCodeMarks, copyWithoutMarks, toggleRemoved } from "@/lib/code-marks-dom";
+import { lineAtViewportTop } from "@/lib/find/skip";
+import type { LineMarks } from "@/lib/line-marks";
 import { useAsync, ViewerError, ViewerLoading, type ViewerProps } from "./common";
 import { TextViewer } from "./text-viewer";
 
-/** Above this size we do not syntax highlight; the plain/large-file viewer is used instead. */
-export const HIGHLIGHT_MAX_BYTES = 300 * 1024;
-
-function escapeHtml(s: string): string {
-  return s.replace(/[&<>"']/g, (c) =>
-    c === "&" ? "&amp;" : c === "<" ? "&lt;" : c === ">" ? "&gt;" : c === '"' ? "&quot;" : "&#39;",
-  );
-}
-
-function plainHtml(code: string): string {
-  const lines = code.endsWith("\n") ? code.slice(0, -1).split("\n") : code.split("\n");
-  const body = lines
-    .map((l, i) => `<span class="line" data-line="${i + 1}" id="L${i + 1}">${escapeHtml(l)}</span>`)
-    .join("\n");
-  return `<pre class="shiki"><code>${body}</code></pre>`;
-}
-
-export function parseLineHash(hash: string): number | null {
-  const m = /^L(\d+)$/.exec(hash);
-  return m ? Number(m[1]) : null;
-}
-
 /**
  * Line-numbered, optionally highlighted code with `#L<n>` anchors.
- * Clicking a line number sets the hash.
+ * Clicking a line number sets the hash. `marks`: the lines changed since the
+ * last view (bars, tints and changed words; gutter bars only above
+ * HIGHLIGHT_MAX_BYTES), applied to the rendered lines (lib/code-marks-dom.ts).
  */
 export function CodeLines({
   code,
   lang,
   wrap = false,
+  marks = null,
 }: {
   code: string;
   lang: ShikiLang | null;
   wrap?: boolean;
+  marks?: LineMarks | null;
 }) {
   const { hash, setHash } = useRoute();
   const ref = useRef<HTMLDivElement>(null);
@@ -68,8 +57,42 @@ export function CodeLines({
     };
   }, [code, lang]);
 
+  // Find in the file (components/find/): the whole text, matched line by line on the rendered lines.
+  const findId = useFindId();
+  const findText = useRef({ code, version: 0 });
+  const findChanged = useFindSource(
+    () => ({
+      kind: "lines",
+      root: () => ref.current,
+      key: () => `${findId}:${findText.current.version}`,
+      text: () => ({ text: findText.current.code }),
+      lines: (root) => {
+        const ls = root.querySelectorAll<HTMLElement>(".line[data-line]");
+        return (n) => ls[n - 1] ?? null;
+      },
+      lineAtTop: (root) => {
+        const el = lineAtViewportTop(root, ".line[data-line]") as HTMLElement | null;
+        return el ? Number(el.dataset.line) : null;
+      },
+    }),
+    [findId],
+  );
+  useEffect(() => {
+    if (findText.current.code === code) return;
+    findText.current = { code, version: findText.current.version + 1 };
+    findChanged();
+  }, [code, findChanged]);
+
   const html = highlighted && highlighted.code === code ? highlighted.html : plain;
   const target = parseLineHash(hash);
+  const full = code.length <= HIGHLIGHT_MAX_BYTES;
+
+  // Before paint, so the highlighted HTML replacing the plain one never shows without its marks.
+  useLayoutEffect(() => {
+    const root = ref.current;
+    if (!root || !marks) return;
+    return applyCodeMarks(root, marks, full);
+  }, [html, marks, full]);
 
   useEffect(() => {
     const root = ref.current;
@@ -84,6 +107,12 @@ export function CodeLines({
   }, [html, target]);
 
   const onClick = (e: React.MouseEvent) => {
+    const toggle = (e.target as HTMLElement).closest<HTMLElement>(".code-removed-toggle");
+    if (toggle) {
+      const run = marks?.removed[Number(toggle.closest<HTMLElement>(".code-removed")?.dataset.run)];
+      if (run) toggleRemoved(toggle, run);
+      return;
+    }
     const line = (e.target as HTMLElement).closest<HTMLElement>(".line");
     if (!line) return;
     const gutter = parseFloat(getComputedStyle(line, "::before").width || "0") || 40;
@@ -94,13 +123,24 @@ export function CodeLines({
     }
   };
 
+  // Copying never takes the marks' labels or the removed lines along.
+  const onCopy = (e: React.ClipboardEvent) => {
+    const root = ref.current;
+    const text = root && marks ? copyWithoutMarks(root, window.getSelection()) : null;
+    if (text === null) return;
+    e.clipboardData.setData("text/plain", text);
+    e.preventDefault();
+  };
+
   return (
     <div
       ref={ref}
       onClick={onClick}
+      onCopy={onCopy}
       className={cn(
         "code-block code-lines overflow-x-auto font-mono text-[13px]",
         wrap && "[&_.line]:whitespace-pre-wrap [&_.line]:break-all",
+        marks && !full && "code-marks-bars",
       )}
       style={{ ["--gutter" as string]: `${String(lineCount).length + 1}ch` }}
       dangerouslySetInnerHTML={{ __html: html }}
@@ -115,10 +155,21 @@ export function CodeViewer({ file, reloadKey }: ViewerProps) {
     reloadKey,
     (signal) => (tooBig ? Promise.resolve(null) : api.content(file.path, signal)),
   );
-  if (tooBig) return <TextViewer file={file} reloadKey={reloadKey} />;
-  if (error && error instanceof ApiError && error.status === 413)
-    return <TextViewer file={file} reloadKey={reloadKey} />;
-  if (data) return <CodeLines code={data.text} lang={langForFile(file.name, file.ext)} />;
+  const large = tooBig || (error instanceof ApiError && error.status === 413);
+  // Changes since the last view: on the code, and as dots in the outline.
+  const marks = useLineMarks(large ? undefined : (data?.text ?? ""), { words: !large });
+  if (large)
+    return (
+      <CodeWithOutline file={file} text={null} changes={marks}>
+        <TextViewer file={file} reloadKey={reloadKey} marks={marks} />
+      </CodeWithOutline>
+    );
+  if (data)
+    return (
+      <CodeWithOutline file={file} text={data.text} changes={marks}>
+        <CodeLines code={data.text} lang={langForFile(file.name, file.ext)} marks={marks} />
+      </CodeWithOutline>
+    );
   if (error) return <ViewerError message={errorMessage(error)} file={file} />;
   return loading ? <ViewerLoading /> : null;
 }

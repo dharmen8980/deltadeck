@@ -16,8 +16,9 @@ import {
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Skeleton } from "@/components/ui/skeleton";
-import { errorMessage, formatBytes } from "@/lib/api";
-import { editApi, formatWhen, loadEditable, whenMs, type HistoryVersion } from "@/lib/edit-api";
+import { errorMessage } from "@/lib/api";
+import { editApi, loadEditable, type HistoryVersion } from "@/lib/edit-api";
+import { formatBytes, formatWhen, whenMs } from "@/lib/format";
 import { useReturnFocus } from "@/lib/return-focus";
 import { cn } from "@/lib/utils";
 import { DiffView } from "@/components/diff/diff-view";
@@ -27,6 +28,7 @@ export function HistorySheet({
   open,
   onOpenChange,
   getCurrentText,
+  maxBytes,
   hasUnsaved,
 }: {
   path: string;
@@ -34,6 +36,8 @@ export function HistorySheet({
   onOpenChange: (open: boolean) => void;
   /** the editor's text when this file is open in the editor */
   getCurrentText: () => string | null;
+  /** the editor's size limit (editMaxBytes(config)) */
+  maxBytes?: number;
   /** does the open editor hold unsaved changes for this file? */
   hasUnsaved?: () => boolean;
 }) {
@@ -67,11 +71,11 @@ export function HistorySheet({
     const fromEditor = getCurrentText();
     if (fromEditor !== null) setCurrent(fromEditor);
     else
-      loadEditable(path, ctrl.signal)
+      loadEditable(path, ctrl.signal, maxBytes)
         .then((t) => setCurrent(t.text))
         .catch(() => setCurrent(null));
     return () => ctrl.abort();
-  }, [open, path, reload, getCurrentText]);
+  }, [open, path, reload, getCurrentText, maxBytes]);
 
   useEffect(() => {
     if (!open || !selected) return;

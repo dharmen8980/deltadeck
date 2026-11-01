@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <style media="screen">
+    body { margin: 0; }
+    @media (max-width: 600px) {
+      .nav { display: none; }
+    }
+  </style>
+</head>
+<body>
+  <!-- <h1>Commented out</h1> -->
+  <header>
+    <nav aria-label="Primary"><ul><li id="home-link">Home</li></ul></nav>
+  </header>
+  <main id="content">
+    <h1 class="title">Tom &amp; Jerry</h1>
+    <article>
+      <h2 id="intro">Intro</h2>
+      <p>Text with <code>&lt;h3&gt;</code> inside.</p>
+    </article>
+    <aside><h3></h3></aside>
+    <form role="search" id="find"><input id="q"></form>
+  </main>
+  <footer>&copy; 2026</footer>
+  <script>
+    class App {
+      start() {}
+    }
+    document.querySelector("#q").addEventListener("input", function onInput() {});
+  </script>
+  <script type="text/x-template" id="tpl"><h4>not a heading</h4></script>
+</body>
+</html>

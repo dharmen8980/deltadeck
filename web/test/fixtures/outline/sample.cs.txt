@@ -1,0 +1,55 @@
+using System;
+using static System.Math;
+[assembly: InternalsVisibleTo("Tests")]
+namespace Acme.Core;
+
+/// <summary>Doc { not a brace</summary>
+[Serializable]
+[DebuggerDisplay("{Name}")]
+public sealed partial class Repo<T> : IRepo<T>, IDisposable where T : class, new()
+{
+    private readonly Dictionary<string, List<T>> _items = new() { ["a"] = new() };
+    public event EventHandler? Changed;
+    public string Name { get; init; } = "x{";
+    public int Count => _items.Count;
+    public T this[int i] { get => default!; set { } }
+    public Repo() : this("x") { }
+    public Repo(string name) { Name = name; }
+    static Repo() { }
+    ~Repo() { }
+    [HttpGet("{id}")]
+    public async Task<IActionResult> GetAsync(
+        int id,
+        [FromQuery] string? filter = null)
+    {
+        if (id > 0) { return Ok(); }
+        foreach (var x in _items) { Console.WriteLine($"{x.Key} {{literal}} {(id > 1 ? "a" : "b")}"); }
+        using (var s = new MemoryStream()) { }
+        lock (_items) { }
+        try { } catch (Exception e) when (e is IOException) { }
+        Func<int, int> sq = v => { return v * v; };
+        void Local() { }
+        return Ok();
+    }
+    public (int a, string b) Tuple() => (1, "b");
+    public IEnumerable<TOut> Map<TOut>(Func<T, TOut> f) where TOut : struct => throw new NotImplementedException();
+    void IDisposable.Dispose() { }
+    public static Repo<T> operator +(Repo<T> a, Repo<T> b) => a;
+    public static implicit operator string(Repo<T> r) => r.Name;
+    public override string ToString() => @"verbatim "" { brace";
+    private string Raw() => """
+        raw { "quoted" }
+        """;
+    char Brace() => '{';
+    enum State { A = 1, B = A << 1 }
+    public record Point(int X, int Y);
+    public record struct Pair(int A, int B) { public int Sum() => A + B; }
+    interface IThing { void Do(); int Prop { get; } }
+    struct Inner { public Inner(int x) { } }
+    #region Helpers
+    protected virtual void OnChanged() => Changed?.Invoke(this, EventArgs.Empty);
+    #endregion
+}
+
+public partial class Repo<T> { partial void Extra(); }
+public delegate void Handler(int x);

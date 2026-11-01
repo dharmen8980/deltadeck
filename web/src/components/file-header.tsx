@@ -17,6 +17,7 @@ import {
   MonitorIcon,
   MoonIcon,
   MoreHorizontalIcon,
+  MoveHorizontalIcon,
   PencilIcon,
   PencilLineIcon,
   PrinterIcon,
@@ -48,32 +49,19 @@ import {
 import { Separator } from "@/components/ui/separator";
 import { SidebarTrigger } from "@/components/ui/sidebar";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { formatBytes, formatRelative, formatTime, rawUrl, type FileInfo, type GitStatusCode } from "@/lib/api";
+import { TooltipButton } from "@/components/tooltip-button";
+import { rawUrl, type FileInfo, type GitStatusCode } from "@/lib/api";
 import type { GitViewMode } from "@/components/git/git-context";
+import { formatBytes, formatRelative, formatTime } from "@/lib/format";
 import { GIT_STATUS_WORDS } from "@/lib/git";
 import { dirname, viewerHref } from "@/lib/paths";
 import { useEditOps } from "@/components/edit/edit-context";
 import { PdfMenu } from "@/components/pdf-menu";
 import type { EventsStatus } from "@/hooks/use-events";
 import { copyText } from "@/lib/clipboard";
+import { setReadingWidth, useReadingWidth } from "@/lib/layout-prefs";
+import { READING_LABELS, READING_WIDTHS, parseReadingWidth } from "@/lib/panel-size";
 import { cn } from "@/lib/utils";
-
-function IconButton({
-  label,
-  children,
-  ...props
-}: React.ComponentProps<typeof Button> & { label: string }) {
-  return (
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <Button variant="ghost" size="icon-sm" aria-label={label} {...props}>
-          {children}
-        </Button>
-      </TooltipTrigger>
-      <TooltipContent>{label}</TooltipContent>
-    </Tooltip>
-  );
-}
 
 function ThemeToggle() {
   const { theme, setTheme } = useTheme();
@@ -134,6 +122,35 @@ export interface FileHeaderProps {
   };
 }
 
+/** Max width of the markdown / Word document column (saved, shared by all documents). */
+function ReadingWidthMenu() {
+  const width = useReadingWidth();
+  return (
+    <DropdownMenu>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <DropdownMenuTrigger asChild>
+            <Button variant="ghost" size="icon-sm" aria-label="Reading width">
+              <MoveHorizontalIcon />
+            </Button>
+          </DropdownMenuTrigger>
+        </TooltipTrigger>
+        <TooltipContent>Reading width</TooltipContent>
+      </Tooltip>
+      <DropdownMenuContent align="end">
+        <DropdownMenuLabel className="text-xs text-muted-foreground">Reading width</DropdownMenuLabel>
+        <DropdownMenuRadioGroup value={width} onValueChange={(v) => setReadingWidth(parseReadingWidth(v))}>
+          {READING_WIDTHS.map((w) => (
+            <DropdownMenuRadioItem key={w} value={w}>
+              {READING_LABELS[w]}
+            </DropdownMenuRadioItem>
+          ))}
+        </DropdownMenuRadioGroup>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
 /** Toggles of the git views: changes since the last commit, and blame. */
 function GitButtons({ git }: { git: NonNullable<FileHeaderProps["git"]> }) {
   const compare = git.mode === "compare";
@@ -141,7 +158,7 @@ function GitButtons({ git }: { git: NonNullable<FileHeaderProps["git"]> }) {
   const word = git.status ? GIT_STATUS_WORDS[git.status] : null;
   return (
     <>
-      <IconButton
+      <TooltipButton
         label={compare ? "Hide changes since the last commit" : `Changes since the last commit${word ? ` (${word})` : ""}`}
         aria-pressed={compare}
         className={cn("relative", compare && "bg-accent")}
@@ -151,16 +168,16 @@ function GitButtons({ git }: { git: NonNullable<FileHeaderProps["git"]> }) {
         {git.status ? (
           <span className="absolute top-1 right-1 size-1.5 rounded-full bg-amber-500" aria-hidden />
         ) : null}
-      </IconButton>
+      </TooltipButton>
       {git.canBlame ? (
-        <IconButton
+        <TooltipButton
           label={blame ? "Hide blame" : "Blame: who last changed each line"}
           aria-pressed={blame}
           className={cn(blame && "bg-accent")}
           onClick={() => git.onMode(blame ? null : "blame")}
         >
           <GitCommitHorizontalIcon />
-        </IconButton>
+        </TooltipButton>
       ) : null}
     </>
   );
@@ -362,12 +379,12 @@ export function FileHeader({
         </Tooltip>
         {git ? <GitButtons git={git} /> : null}
         {path ? (
-          <IconButton label="Copy path" onClick={copyPath}>
+          <TooltipButton label="Copy path" onClick={copyPath}>
             <CopyIcon />
-          </IconButton>
+          </TooltipButton>
         ) : null}
         {file ? (
-          <IconButton label={inline ? "Open raw file in a new tab" : "Download raw file"} asChild>
+          <TooltipButton label={inline ? "Open raw file in a new tab" : "Download raw file"} asChild>
             {inline ? (
               <a href={rawUrl(file.path)} target="_blank" rel="noreferrer noopener">
                 <ExternalLinkIcon />
@@ -377,13 +394,14 @@ export function FileHeader({
                 <DownloadIcon />
               </a>
             )}
-          </IconButton>
+          </TooltipButton>
         ) : null}
         {file && (file.kind === "markdown" || file.kind === "mermaid" || file.kind === "docx") ? <PdfMenu key={file.path} file={file} /> : null}
+        {(file?.kind === "markdown" || file?.kind === "docx") && !editing ? <ReadingWidthMenu /> : null}
         {file?.kind === "markdown" || file?.kind === "docx" ? (
-          <IconButton label="Print" onClick={() => window.print()}>
+          <TooltipButton label="Print" onClick={() => window.print()}>
             <PrinterIcon />
-          </IconButton>
+          </TooltipButton>
         ) : null}
         {editEnabled ? <FileActionsMenu path={path} isDir={isDir} isFile={!!file} /> : null}
         <ThemeToggle />

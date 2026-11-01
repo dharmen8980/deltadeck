@@ -1,7 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { KEEPALIVE_MAX, needsDigest, openChangeStore, sha256Hex } from "../src/lib/seen-store.ts";
+import { sha256Hex, sha256HexOrNull } from "../src/lib/digest.ts";
+import { KEEPALIVE_MAX, needsDigest, openChangeStore } from "../src/lib/seen-store.ts";
 
 interface Call {
   url: string;
@@ -81,9 +82,10 @@ test("keepalive only for small bodies", async () => {
   assert.equal(calls.at(-1)!.init.keepalive, undefined, "counted in UTF-8 bytes");
 });
 
-test("sha256Hex hashes the UTF-8 text; needsDigest only for texts that may not fit", async () => {
+test("sha256Hex(OrNull) hashes the UTF-8 text; needsDigest only for texts that may not fit", async () => {
   for (const t of ["", "abc", "é \u{1f600}\r\n\uFFFD", "x".repeat(100_000)]) {
-    assert.equal(await sha256Hex(t), createHash("sha256").update(t, "utf8").digest("hex"));
+    assert.equal(await sha256HexOrNull(t), createHash("sha256").update(t, "utf8").digest("hex"));
+    assert.equal(await sha256Hex(new TextEncoder().encode(t)), createHash("sha256").update(t, "utf8").digest("hex"));
   }
   assert.equal(needsDigest(null), false);
   assert.equal(needsDigest(undefined), false);
@@ -97,7 +99,7 @@ test("keepalive over the cap sends the digest instead of the text", async () => 
   const { f, calls } = fake((c) => (c.init.method === "GET" ? { json: { records: [] } } : { json: { record: rec("a.md") } }));
   const store = (await openChangeStore(ROOT, { token: () => "t", fetch: f }))!;
   const big = "é".repeat(KEEPALIVE_MAX);
-  const hex = (await sha256Hex(big))!;
+  const hex = await sha256Hex(big);
   await store.commit({ path: "a.md", mtime: 1, size: 2, text: big, textSha256: hex }, { keepalive: true });
   const c = calls.at(-1)!;
   assert.equal(c.init.keepalive, true);

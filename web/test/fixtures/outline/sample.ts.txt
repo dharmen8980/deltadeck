@@ -1,0 +1,70 @@
+import { z } from "zod";
+
+// function commented() {}
+const s = "function inString() {}";
+
+export interface Props<T> extends Base {
+  value: T;
+  onChange(v: T): void;
+}
+
+export type Handler = (e: Event) => void;
+
+export enum Mode {
+  Light = "light",
+  Dark = "dark",
+}
+
+namespace Util.Inner {
+  export function helper(): void {}
+}
+
+export abstract class Store<T> extends Base implements Iterable<T> {
+  static #count = 0;
+  private items: T[] = [];
+  onEvent = (e: Event) => {};
+  constructor(private readonly name: string) {
+    super();
+  }
+  get size(): number {
+    return this.items.length;
+  }
+  set size(v: number) {}
+  add(item: T): void;
+  add(items: T[]): void;
+  add(x: T | T[]): void {
+    const inner = () => 1;
+  }
+  async *[Symbol.asyncIterator]() {}
+  static create<U>(): Store<U> {
+    return null!;
+  }
+  abstract flush(): Promise<void>;
+}
+
+export function format(a: string): string;
+export function format(a: number): string;
+export function format(a: unknown): string {
+  function local() {}
+  return String(a);
+}
+
+export const debounce = <F extends (...a: never[]) => void>(fn: F, ms = 100) => fn;
+const legacy = function () {};
+let Button = memo(function Button() { return null; });
+const api = {
+  get(url: string) {},
+  post: async (url: string) => {},
+  version: 2,
+};
+
+export default function main() {}
+
+describe("Store", () => {
+  beforeEach(() => {});
+  it("adds items", () => {});
+  describe.each([1, 2])("with %i", (n) => {
+    test.skip("skipped", async () => {});
+  });
+  it(`template name`, () => {});
+});

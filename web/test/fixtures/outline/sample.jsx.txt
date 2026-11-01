@@ -1,0 +1,17 @@
+import React from "react";
+
+export default () => <div>{"function no() {}"}</div>;
+
+class Legacy extends React.Component {
+  state = { open: false };
+  handleClick = () => {
+    this.setState({ open: true });
+  };
+  render() {
+    return <button onClick={this.handleClick}>x</button>;
+  }
+}
+
+export const Card = forwardRef((props, ref) => <div ref={ref} />);
+
+module.exports.helper = function helper() {};

@@ -1,4 +1,4 @@
-// Pure rules for "Changed since you last looked" (no imports: unit tested with node --test).
+// Pure rules for "Changed since you last looked" (no `@/` imports: unit tested with node --test).
 
 /** File kinds whose text is fetched, snapshotted and diffed. */
 export const TEXT_KINDS: ReadonlySet<string> = new Set(["markdown", "mermaid", "code", "text", "json", "csv"]);
@@ -13,7 +13,7 @@ export const DOCX_MAX = 20 * 1024 * 1024;
  * Kinds tracked through a text converted on the server rather than the file's own text:
  * a .docx is snapshotted and diffed as its markdown (/api/docx?format=markdown).
  */
-export const CONVERTED_KINDS: ReadonlySet<string> = new Set(["docx"]);
+const CONVERTED_KINDS: ReadonlySet<string> = new Set(["docx"]);
 
 /** Kinds with a tracked text: the file's own (TEXT_KINDS) or a converted one (CONVERTED_KINDS). */
 export const isTracked = (kind: string) => TEXT_KINDS.has(kind) || CONVERTED_KINDS.has(kind);
@@ -23,6 +23,13 @@ export const trackedMax = (kind: string) => (CONVERTED_KINDS.has(kind) ? DOCX_MA
 
 /** The tracked text is markdown: block diffs and in-place highlights. */
 export const isMarkdownText = (kind: string) => kind === "markdown" || kind === "docx";
+
+/**
+ * Kinds whose own view marks changes line by line in place (the code and text viewers,
+ * JSON's source view). csv is tracked but shown as a table, so it gets the banner only.
+ */
+const LINE_MARK_KINDS: ReadonlySet<string> = new Set(["code", "text", "json"]);
+export const hasLineMarks = (kind: string) => LINE_MARK_KINDS.has(kind);
 
 /**
  * true when a file seen before has another mtime or size now (|Δmtime| > 1 ms).

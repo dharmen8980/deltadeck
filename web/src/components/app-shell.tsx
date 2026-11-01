@@ -24,6 +24,8 @@ import { FileOpsProvider } from "@/components/edit/file-ops";
 import { BlameView } from "@/components/git/blame-view";
 import { GitContext, useGit, useGitCompare, useGitState, type GitViewMode } from "@/components/git/git-context";
 import { SidebarInset, SidebarProvider, useSidebar } from "@/components/ui/sidebar";
+import { usePanelWidth, useReadingWidth } from "@/lib/layout-prefs";
+import { READING_MAX, SIDEBAR_SPEC } from "@/lib/panel-size";
 import { Skeleton } from "@/components/ui/skeleton";
 import { FileHeader } from "@/components/file-header";
 import { FileTree } from "@/components/file-tree";
@@ -48,14 +50,34 @@ import { setNavigationGuard, useRoute } from "@/hooks/use-route";
 import { useTree } from "@/hooks/use-tree";
 import { api, ApiError, errorMessage, type AppConfig, type ChangeEvent, type FileInfo, type FileKind } from "@/lib/api";
 import { CONTENT_MAX, remapPath, TEXT_KINDS } from "@/lib/change-rules";
-import { configureEditClient } from "@/lib/edit-api";
+import { configureEditClient, editMaxBytes } from "@/lib/edit-api";
 import { isEditable } from "@/lib/editor-lang";
 import { isTypingTarget } from "@/lib/keys";
+import { createPref, usePref } from "@/lib/prefs";
+import { FindController } from "@/components/find/find-controller";
 import { configureRootsClient } from "@/lib/roots-api";
 import { ancestors, basename, dirname } from "@/lib/paths";
 import { buildTree, findDir, type SortMode } from "@/lib/tree";
 
 const EMPTY_SET: ReadonlySet<string> = new Set();
+const NO_KINDS: FileKind[] = [];
+
+// The sidebar's saved sort, file type filter and "changed only" toggle.
+const sortPref = createPref<SortMode>("viewer.sort", (raw) => (raw === "mtime" ? "mtime" : "name"), (v) => v);
+const kindsPref = createPref<FileKind[]>(
+  "viewer.kinds",
+  (raw) => {
+    try {
+      const k: unknown = JSON.parse(raw ?? "[]");
+      if (Array.isArray(k)) return k.filter((x): x is FileKind => typeof x === "string");
+    } catch {
+      // ignore a corrupt saved value
+    }
+    return NO_KINDS;
+  },
+  (v) => JSON.stringify(v),
+);
+const changedOnlyPref = createPref<boolean>("viewer.changedOnly", (raw) => raw === "1", (on) => (on ? "1" : "0"));
 
 // The editor (and CodeMirror) is only downloaded when someone actually edits.
 const EditorPane = lazy(() => import("@/components/edit/editor-pane").then((m) => ({ default: m.EditorPane })));
@@ -165,9 +187,11 @@ function FileView({
 function MainArea({ dropDir, acceptDrops, children }: { dropDir: string; acceptDrops: boolean; children: React.ReactNode }) {
   const ops = useEditOps();
   const [over, setOver] = useState(false);
-  if (!ops || !acceptDrops) return <div className="min-w-0 flex-1">{children}</div>;
+  // data-find-root: what find in the file searches in views that register no find source
+  if (!ops || !acceptDrops) return <div data-find-root className="min-w-0 flex-1">{children}</div>;
   return (
     <div
+      data-find-root
       className="relative min-w-0 flex-1"
       onDragOver={(e) => {
         if (hasDrag(e.dataTransfer) !== "files") return;
@@ -214,8 +238,8 @@ function Shell({ initialConfig }: { initialConfig: AppConfig | null }) {
   const { tree, loading, error, refresh } = useTree();
   const { setOpen, setOpenMobile, isMobile } = useSidebar();
   const [config, setConfig] = useState<AppConfig | null>(initialConfig);
-  const [sort, setSort] = useState<SortMode>("name");
-  const [kinds, setKinds] = useState<FileKind[]>([]);
+  const sort = usePref(sortPref, "name");
+  const kinds = usePref(kindsPref, NO_KINDS);
   const [filter, setFilter] = useState("");
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set());
   const [searchOpen, setSearchOpen] = useState(false);
@@ -225,9 +249,10 @@ function Shell({ initialConfig }: { initialConfig: AppConfig | null }) {
   const changes = useChangeTracker(config?.seen_enabled ? config.root_path : null, tree);
   // ---------- read-only git views (uncommitted changes, last commit, blame) ----------
   const git = useGitState(Boolean(config?.git_enabled), tree?.version);
-  const [changedOnly, setChangedOnly] = useState(false);
+  const changedOnly = usePref(changedOnlyPref, false);
   // ---------- editing (tier 3, only when the server says so) ----------
   const editEnabled = Boolean(config?.edit_enabled && config.edit_token);
+  const editMax = editMaxBytes(config);
   /** The open edit session. `from` is the previous path while following a rename. */
   const [edit, setEdit] = useState<{ path: string; from?: string; session: number; file: FileInfo } | null>(null);
   const [dirty, setDirtyState] = useState(false);
@@ -290,30 +315,9 @@ function Shell({ initialConfig }: { initialConfig: AppConfig | null }) {
     reloadHome();
   }, []);
 
-  useEffect(() => {
-    const saved = window.localStorage.getItem("viewer.sort");
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    if (saved === "name" || saved === "mtime") setSort(saved);
-    try {
-      const k: unknown = JSON.parse(window.localStorage.getItem("viewer.kinds") ?? "[]");
-      if (Array.isArray(k)) setKinds(k.filter((x): x is FileKind => typeof x === "string"));
-    } catch {
-      // ignore a corrupt saved value
-    }
-    setChangedOnly(window.localStorage.getItem("viewer.changedOnly") === "1");
-  }, []);
-  const changeKinds = useCallback((k: FileKind[]) => {
-    setKinds(k);
-    window.localStorage.setItem("viewer.kinds", JSON.stringify(k));
-  }, []);
-  const changeSort = useCallback((s: SortMode) => {
-    setSort(s);
-    window.localStorage.setItem("viewer.sort", s);
-  }, []);
-  const changeChangedOnly = useCallback((on: boolean) => {
-    setChangedOnly(on);
-    window.localStorage.setItem("viewer.changedOnly", on ? "1" : "0");
-  }, []);
+  const changeKinds = useCallback((k: FileKind[]) => kindsPref.set(k), []);
+  const changeSort = useCallback((s: SortMode) => sortPref.set(s), []);
+  const changeChangedOnly = useCallback((on: boolean) => changedOnlyPref.set(on), []);
   // Leaving a file (to another file, a folder or home) records the version that was on screen.
   // A route effect, not an unmount cleanup: StrictMode re-runs cleanups.
   const { flushPending, rename: renameChanges, expectOwnWrite, ownSave, onSeenEvent, resync: resyncChanges } = changes;
@@ -573,11 +577,11 @@ function Shell({ initialConfig }: { initialConfig: AppConfig | null }) {
 
   const startEdit = useCallback(() => {
     const f = fileState.data;
-    if (!editEnabled || !f || !isEditable(f) || f.path !== pathRef.current) return;
+    if (!editEnabled || !f || !isEditable(f, editMax) || f.path !== pathRef.current) return;
     sessionSeq.current += 1;
     setDirty(false);
     setEdit({ path: f.path, session: sessionSeq.current, file: f });
-  }, [editEnabled, fileState.data, setDirty]);
+  }, [editEnabled, editMax, fileState.data, setDirty]);
 
   // A file created from the UI opens straight in the editor once its info has loaded.
   useEffect(() => {
@@ -749,7 +753,7 @@ function Shell({ initialConfig }: { initialConfig: AppConfig | null }) {
               editEnabled={editEnabled}
               editing={showEditor}
               dirty={dirty}
-              onEdit={editEnabled && !showEditor && !deleted && isEditable(fileState.data) && fileState.data?.path === route.path ? startEdit : undefined}
+              onEdit={editEnabled && !showEditor && !deleted && isEditable(fileState.data, editMax) && fileState.data?.path === route.path ? startEdit : undefined}
               onDone={requestExit}
               git={gitHeader}
             />
@@ -757,7 +761,8 @@ function Shell({ initialConfig }: { initialConfig: AppConfig | null }) {
               {body}
             </MainArea>
           </SidebarInset>
-          <SearchDialog open={searchOpen} onOpenChange={setSearchOpen} folders={folders} onSelect={onSearchSelect} />
+          <FindController enabled={!showEditor} fileKey={route.path} searchTerm={route.hl} />
+          <SearchDialog open={searchOpen} onOpenChange={setSearchOpen} folders={folders} onSelect={onSearchSelect} desktop={Boolean(config?.desktop)} />
           {editEnabled ? (
             <AlertDialog open={!!unsaved} onOpenChange={(o) => !o && !savingForExit && (setUnsaved(null), setPendingEdit(null))}>
               <AlertDialogContent>
@@ -809,7 +814,7 @@ export function AppShell() {
   if (!loaded) {
     return (
       <div className="flex h-svh">
-        <div className="w-64 space-y-2 border-r p-3">
+        <div className="w-80 space-y-2 border-r p-3">
           {Array.from({ length: 12 }).map((_, i) => (
             <Skeleton key={i} className="h-5 w-full" />
           ))}
@@ -823,8 +828,25 @@ export function AppShell() {
   }
   if (loaded.config?.no_root) return <NoRootView switchEnabled={loaded.config.root_switch_enabled ?? false} />;
   return (
-    <SidebarProvider style={{ ["--sidebar-width" as string]: "20rem", ["--header-h" as string]: "3.5rem" }}>
+    <LayoutProvider>
       <Shell initialConfig={loaded.config} />
+    </LayoutProvider>
+  );
+}
+
+/** The sidebar provider with the saved sidebar width and reading width as CSS variables (resize-handle.tsx; the contents panel sets its own). */
+function LayoutProvider({ children }: { children: React.ReactNode }) {
+  const sidebar = usePanelWidth(SIDEBAR_SPEC);
+  const reading = useReadingWidth();
+  return (
+    <SidebarProvider
+      style={{
+        ["--sidebar-width" as string]: `${sidebar}px`,
+        ["--reading-width" as string]: READING_MAX[reading],
+        ["--header-h" as string]: "3.5rem",
+      }}
+    >
+      {children}
     </SidebarProvider>
   );
 }

@@ -17,6 +17,7 @@ import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { FileKindIcon } from "@/components/file-icon";
 import { api, errorMessage, type ContentHit, type ContentMatch, type FileKind, type SearchResponse } from "@/lib/api";
 import { dirname } from "@/lib/paths";
+import { searchCoverageHint, searchCoverageNotice } from "@/lib/search-coverage";
 
 const TYPE_CHIPS = ["md", "mmd", "docx", "py", "sh", "json", "jsonl", "log", "out", "txt", "csv"];
 const ALL = "__all__";
@@ -55,11 +56,14 @@ export function SearchDialog({
   onOpenChange,
   folders,
   onSelect,
+  desktop = false,
 }: {
   open: boolean;
   onOpenChange: (o: boolean) => void;
   folders: string[];
   onSelect: (t: SearchTarget) => void;
+  /** the desktop app: no command-line options to suggest */
+  desktop?: boolean;
 }) {
   const [q, setQ] = useState("");
   const [folder, setFolder] = useState(ALL);
@@ -107,6 +111,8 @@ export function SearchDialog({
   const data = query && result ? result.data : null;
   const stale = result?.key !== key;
   const contentHits: ContentHit[] = useMemo(() => data?.content ?? [], [data]);
+  const coverage = searchCoverageNotice(data);
+  const coverageHint = searchCoverageHint(data, desktop) ?? undefined;
 
   const choose = (t: SearchTarget) => {
     onSelect(t);
@@ -161,6 +167,7 @@ export function SearchDialog({
           <div className="ml-auto flex items-center gap-1 text-xs text-muted-foreground">
             {busy || (stale && query) ? <Loader2Icon className="size-3.5 animate-spin" /> : null}
             {data?.indexing ? <span>indexing...</span> : null}
+            {coverage ? <span title={coverageHint}>{coverage}</span> : null}
           </div>
         </div>
         <CommandList className="max-h-[min(65vh,40rem)]">
@@ -199,9 +206,11 @@ export function SearchDialog({
                       >
                         <FileKindIcon kind={hit.kind} className="text-muted-foreground" />
                         <span className="truncate font-medium">{hit.path}</span>
-                        <span className="ml-auto shrink-0 text-xs text-muted-foreground">
-                          {hit.match_count} match{hit.match_count === 1 ? "" : "es"}
-                        </span>
+                        {hit.match_count ? (
+                          <span className="ml-auto shrink-0 text-xs text-muted-foreground">
+                            {hit.match_count} match{hit.match_count === 1 ? "" : "es"}
+                          </span>
+                        ) : null}
                       </CommandItem>
                       {hit.matches.map((m) => (
                         <CommandItem

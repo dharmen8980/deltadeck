@@ -2,7 +2,8 @@
 
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import { api, errorMessage, formatTime, type AppConfig, type DocxResponse, type FileInfo } from "@/lib/api";
+import { api, errorMessage, type AppConfig, type DocxResponse, type FileInfo } from "@/lib/api";
+import { formatTime } from "@/lib/format";
 import { basename } from "@/lib/paths";
 import type { TocHeading } from "@/components/toc";
 import { DocxMarkup, docxComponents } from "@/components/viewers/docx-viewer";
