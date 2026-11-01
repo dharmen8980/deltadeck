@@ -49,7 +49,8 @@ def test_disabled_by_default(tree, data_dir):
         assert c.post("/api/tree").status_code == 405
         assert c.put("/api/file?path=a.md").status_code == 405
     assert snapshot_fs(tree) == before
-    assert not data_dir.exists()  # read-only mode never creates the data dir
+    # read-only mode creates no edit store: the data dir only holds the search index
+    assert sorted(os.listdir(data_dir)) == ["search"]
 
 
 def test_settings_from_args_and_env(tmp_path):

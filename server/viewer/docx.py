@@ -1,8 +1,10 @@
 """Read-only .docx conversion: one pipeline, two outputs.
 
-    docx_to_html(real)      -> sanitized HTML for display (images inlined as data: URIs)
-    docx_to_markdown(real)  -> markdown text for search, change tracking and agents (no images)
-    convert_docx(real|bytes) -> DocxResult with both, the block line map and the warnings
+    convert_cached(real, images=)     -> DocxResult for a file on disk (cached by path, mtime, size)
+    convert_blob_cached(oid, read)    -> DocxResult without images for a git blob (cached by object id)
+    convert_docx(real|bytes, images=) -> uncached DocxResult: sanitized HTML (images as data: URIs,
+                                         or none), markdown for search / change tracking / agents,
+                                         the block line map and the warnings
 
 mammoth turns the document into HTML; that HTML is then parsed (html.parser) into a small tree
 that keeps only an allowlist of tags and attributes, and the same tree is serialised back to HTML
@@ -27,6 +29,7 @@ import zlib
 from dataclasses import dataclass, field
 from html.parser import HTMLParser
 
+from .errors import HttpError
 from .readers import CONTENT_MAX, MB
 
 DOCX_MAX = 20 * MB  # the .docx file itself
@@ -51,11 +54,8 @@ IMAGE_TYPES = {"image/png", "image/jpeg", "image/gif", "image/webp", "image/bmp"
 OLE_MAGIC = b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1"  # encrypted .docx and old .doc files
 
 
-class DocxError(Exception):
-    def __init__(self, status: int, detail: str):
-        super().__init__(detail)
-        self.status = status
-        self.detail = detail
+class DocxError(HttpError):
+    pass
 
 
 @dataclass
@@ -725,22 +725,25 @@ def _cache_put(key: tuple, r: DocxResult, *, recent: bool = True) -> None:
             _cache.popitem(last=False)
 
 
-def _locked(background: bool):
-    """The conversion lock of the caller: a request waits BUSY_TIMEOUT at most, then gets 503
-    (it must not hold a worker thread for minutes); the indexer simply waits its turn."""
+def _locked(background: bool, wait: float | None = None):
+    """The conversion lock of the caller: a request waits BUSY_TIMEOUT (or `wait`) at most, then
+    gets 503 (it must not hold a worker thread for minutes); the indexer simply waits its turn."""
     if background:
         _background_lock.acquire()
         return _background_lock
-    if not _convert_lock.acquire(timeout=BUSY_TIMEOUT):
+    if not _convert_lock.acquire(timeout=BUSY_TIMEOUT if wait is None else max(0.0, wait)):
         raise DocxError(503, "busy converting another document, try again")
     return _convert_lock
 
 
 def convert_cached(real: str, *, images: bool = True, st: os.stat_result | None = None,
-                   background: bool = False) -> DocxResult:
+                   background: bool = False, wait: float | None = None,
+                   recent: bool | None = None) -> DocxResult:
     """convert_docx(real) cached by (real path, mtime, size). A markdown-only result (images=False)
     is upgraded when HTML is asked for later. background=True (search indexing) uses the
-    background lock, the lower XML limit and does not push other documents out of the cache."""
+    background lock, the lower XML limit and does not push other documents out of the cache.
+    wait: how long a foreground caller waits for a running conversion (default BUSY_TIMEOUT; 0:
+    only a cached result, else 503); recent=False caches like indexing does (search snippets)."""
     st = st or os.stat(real)
     if st.st_size > DOCX_MAX:
         raise DocxError(413, f"document larger than {DOCX_MAX // MB} MB")
@@ -748,7 +751,9 @@ def convert_cached(real: str, *, images: bool = True, st: os.stat_result | None 
     r = _cache_get(key, images)
     if r is not None:
         return r
-    lock = _locked(background)
+    if wait is not None and wait <= 0:  # cache only
+        raise DocxError(503, "busy converting another document, try again")
+    lock = _locked(background, wait)
     try:
         r = _cache_get(key, images)
         if r is not None:
@@ -756,7 +761,7 @@ def convert_cached(real: str, *, images: bool = True, st: os.stat_result | None 
         r = convert_docx(real, images=images, xml_total_max=XML_TOTAL_BACKGROUND_MAX if background else None)
         after = os.stat(real)
         if (after.st_mtime_ns, after.st_size) == key[2:]:  # not changed while reading
-            _cache_put(key, r, recent=not background)
+            _cache_put(key, r, recent=not background if recent is None else recent)
         return r
     finally:
         lock.release()
@@ -779,15 +784,3 @@ def convert_blob_cached(oid: str, read: typing.Callable[[], bytes]) -> DocxResul
         return r
     finally:
         lock.release()
-
-
-def docx_to_html(real: str) -> str:
-    """Sanitized HTML of a .docx file (images as data: URIs). Raises DocxError."""
-    r = convert_cached(real)
-    assert r.html is not None
-    return r.html
-
-
-def docx_to_markdown(real: str) -> str:
-    """Markdown of a .docx file (images as ![alt]() placeholders). Raises DocxError."""
-    return convert_cached(real, images=False).markdown

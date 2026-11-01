@@ -119,6 +119,18 @@ def _gaps(size: int, segments: list[dict]) -> list[dict]:
     return gaps
 
 
+def read_content(real: str) -> tuple[bytes, str | None]:
+    """The file's bytes and its text as /api/content serves it (UTF-8, invalid bytes replaced).
+    text is None if the file is over CONTENT_MAX (the bytes then stop at CONTENT_MAX + 1). Shared
+    with seen's commit-by-digest, which only works while both decode the file identically.
+    Raises OSError."""
+    with open(real, "rb") as f:
+        data = f.read(CONTENT_MAX + 1)
+    if len(data) > CONTENT_MAX:
+        return data, None
+    return data, data.decode("utf-8", errors="replace")
+
+
 def text_chunks(real: str, size: int, start: int | None = None, length: int | None = None,
                 line: int | None = None) -> dict:
     with open(real, "rb") as f:

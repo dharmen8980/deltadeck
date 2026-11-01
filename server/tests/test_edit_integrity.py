@@ -1,5 +1,5 @@
-"""Regressions from the third review: case-variant data dirs, per-root recovery stores,
-check-then-write races through swapped symlinks, no-op history restores."""
+"""Editing integrity: case-variant data dirs, per-root recovery stores, check-then-write races
+through swapped symlinks, no-op history restores."""
 
 import hashlib
 import json
@@ -9,7 +9,7 @@ import unicodedata
 import pytest
 from fastapi.testclient import TestClient
 
-from conftest import editing, running, snapshot_fs, store_of, write
+from conftest import case_insensitive, editing, running, snapshot_fs, store_of, write
 from viewer.app import create_app
 from viewer.config import ConfigError, Settings
 
@@ -18,15 +18,11 @@ def sha(b: bytes) -> str:
     return hashlib.sha256(b).hexdigest()
 
 
-def _case_insensitive(p) -> bool:
-    return os.path.exists(str(p).swapcase()) or os.path.exists(os.path.join(os.path.dirname(p), os.path.basename(p).upper()))
-
-
 # --- 1. data dir spelled with another case / normalisation -----------------------------------
 def test_case_and_unicode_variant_data_dir_refused(tmp_path):
     root = tmp_path / "ci" / "root"
     root.mkdir(parents=True)
-    if not _case_insensitive(root):
+    if not case_insensitive(root):
         pytest.skip("case-sensitive file system")
     for dd in (tmp_path / "ci" / "ROOT" / ".data", tmp_path / "CI" / "Root" / "x" / "y"):
         s = Settings.make(str(root), allow_edit=True, data_dir=str(dd), watch=False, reconcile_interval=0)
@@ -50,7 +46,7 @@ def test_case_and_unicode_variant_data_dir_refused(tmp_path):
 def test_read_only_hides_case_variant_data_dir(tmp_path):
     root = tmp_path / "root"
     write(root / "doc.md", "zqvisible\n")
-    if not _case_insensitive(root):
+    if not case_insensitive(root):
         pytest.skip("case-sensitive file system")
     write(root / ".data" / "roots" / "k" / "history" / "h" / "v1", "zqsecrethistory\n")
     write(root / ".data" / "roots" / "k" / "audit.jsonl", '{"op":"zqauditop"}\n')

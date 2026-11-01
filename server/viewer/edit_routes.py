@@ -4,14 +4,15 @@ from __future__ import annotations
 
 import asyncio
 import hmac
-import json
 
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel, ConfigDict, Field
 from starlette.formparsers import MultiPartException, MultiPartParser
 
+from .config import truthy
 from .edit import EditError, Editor
+from .http_common import send_json
 
 EDIT_PREFIX = "/api/edit"
 DEV_UI_PORT = 3000  # `next dev` (its /api proxy forwards the browser's Origin)
@@ -26,14 +27,6 @@ def is_edit_path(path: str) -> bool:
 
 class _BodyTooLarge(Exception):
     pass
-
-
-async def _send_json(send, status: int, data: dict, extra_headers=()) -> None:
-    body = json.dumps(data).encode()
-    await send({"type": "http.response.start", "status": status, "headers": [
-        (b"content-type", b"application/json"), (b"content-length", str(len(body)).encode()),
-        (b"cache-control", b"no-store"), *extra_headers]})
-    await send({"type": "http.response.body", "body": body})
 
 
 class EditGate:
@@ -78,16 +71,16 @@ class EditGate:
         refusal = self._refusal(scope)
         if refusal is not None:
             extra = [(b"allow", b"GET, HEAD, POST, PUT, DELETE")] if refusal[0] == 405 else []
-            return await _send_json(send, refusal[0], {"detail": refusal[1]}, extra)
+            return await send_json(send, refusal[0], {"detail": refusal[1]}, extra)
 
         limit = self.upload_max if scope["path"] == EDIT_PREFIX + "/upload" else self.json_max
         for k, v in scope.get("headers", []):
             if k.lower() == b"content-length":
                 try:
                     if int(v) > limit:
-                        return await _send_json(send, 413, {"detail": "request body too large"})
+                        return await send_json(send, 413, {"detail": "request body too large"})
                 except ValueError:
-                    return await _send_json(send, 400, {"detail": "invalid content-length"})
+                    return await send_json(send, 400, {"detail": "invalid content-length"})
         seen = 0
         started = exceeded = False
 
@@ -106,7 +99,7 @@ class EditGate:
             if exceeded:  # the framework turned our exception into its own error: report a 413
                 if msg["type"] == "http.response.start" and not started:
                     started = True
-                    await _send_json(send, 413, {"detail": "request body too large"})
+                    await send_json(send, 413, {"detail": "request body too large"})
                 return
             if msg["type"] == "http.response.start":
                 started = True
@@ -116,7 +109,7 @@ class EditGate:
             await self.app(scope, limited_receive, tracking_send)
         except _BodyTooLarge:
             if not started:
-                await _send_json(send, 413, {"detail": "request body too large"})
+                await send_json(send, 413, {"detail": "request body too large"})
 
 
 class _UploadTooLarge(Exception):
@@ -184,10 +177,6 @@ class PurgeBody(_Body):
 class HistoryRestoreBody(_Body):
     path: str
     id: str
-
-
-def _truthy(v) -> bool:
-    return isinstance(v, str) and v.strip().lower() in ("1", "true", "yes", "on")
 
 
 def register_edit_routes(app: FastAPI, editor: Editor, on_change) -> None:
@@ -281,6 +270,6 @@ def register_edit_routes(app: FastAPI, editor: Editor, on_change) -> None:
                      if k in ("files", "files[]") and not isinstance(f, str)]
             fields = {k: v for k, v in form.multi_items() if isinstance(v, str)}
             return await run(editor.upload, fields.get("dir", ""), files,
-                             _truthy(fields.get("overwrite")), _truthy(fields.get("create_dir")))
+                             truthy(fields.get("overwrite")), truthy(fields.get("create_dir")))
         finally:
             await form.close()

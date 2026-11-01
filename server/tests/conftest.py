@@ -1,11 +1,17 @@
 import contextlib
+import os
+import socket
+import threading
 import time
 
 import pytest
+import uvicorn
 from fastapi.testclient import TestClient
 
 from viewer.app import create_app
-from viewer.config import Settings
+from viewer.config import Settings, canonical_path
+from viewer.paths import PathGuard
+from viewer.store import Store
 
 
 @contextlib.contextmanager
@@ -29,6 +35,46 @@ def wait_until(pred, timeout=15.0, interval=0.1):
         time.sleep(interval)
 
 
+def free_port() -> int:
+    with socket.socket() as s:
+        s.bind(("127.0.0.1", 0))
+        return s.getsockname()[1]
+
+
+def start_server(app, port, **config) -> tuple[uvicorn.Server, threading.Thread]:
+    """A real uvicorn server for `app` on a background thread (for SSE and lifespan tests); wait for
+    `server.started`, then stop it with stop_server."""
+    config.setdefault("timeout_graceful_shutdown", 2)
+    server = uvicorn.Server(uvicorn.Config(app, host="127.0.0.1", port=port, log_level="warning", **config))
+    th = threading.Thread(target=server.run, daemon=True)
+    th.start()
+    return server, th
+
+
+def stop_server(server: uvicorn.Server, th: threading.Thread, timeout: float = 10) -> None:
+    server.should_exit = True
+    th.join(timeout)
+
+
+def case_insensitive(path) -> bool:
+    """True if the file system holding the directory `path` ignores case (probed with a file)."""
+    probe = path / "zqCaseProbe"
+    probe.write_text("x")
+    try:
+        return os.path.exists(path / "zqcaseprobe")
+    finally:
+        probe.unlink()
+
+
+def make_store(root, data_dir=None, **kw):
+    """A fully scanned Store of `root` (data dir next to it unless given)."""
+    settings = Settings.make(canonical_path(str(root)), data_dir=canonical_path(str(data_dir or root.parent / "d")),
+                             **kw)
+    store = Store(PathGuard(settings))
+    store.full_scan()
+    return store
+
+
 def write(path, text=""):
     path.parent.mkdir(parents=True, exist_ok=True)
     if isinstance(text, bytes):
@@ -36,6 +82,23 @@ def write(path, text=""):
     else:
         path.write_text(text)
     return path
+
+
+@pytest.fixture(autouse=True)
+def _search_index_in_tmp(tmp_path, monkeypatch):
+    """Apps made with the default data dir (the repo's .data, which a real viewer may be using)
+    keep their search index under tmp_path instead."""
+    from viewer import app as app_mod
+    from viewer.config import DEFAULT_DATA_DIR, canonical_path
+
+    real = app_mod.search_index_dir
+    default = canonical_path(DEFAULT_DATA_DIR)
+
+    def redirected(settings):
+        d = real(settings)
+        return str(tmp_path / "default-data" / "search") if d is not None and settings.data_dir == default else d
+
+    monkeypatch.setattr(app_mod, "search_index_dir", redirected)
 
 
 @pytest.fixture
@@ -59,8 +122,6 @@ def editing(root, data_dir, **kw):
 
 def snapshot_fs(path):
     """{relative path: (is_dir, bytes|None, mode)} for everything under path (links not followed)."""
-    import os
-
     out = {}
     for dirpath, dirs, files in os.walk(path):
         for n in dirs + files:

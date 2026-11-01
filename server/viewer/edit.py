@@ -15,6 +15,7 @@ import unicodedata
 from dataclasses import dataclass
 
 from .config import ConfigError, Settings
+from .errors import HttpError
 from .fsops import (SymlinkError, fsync_fd, lstat_at, open_dir_chain, open_dir_chain_from, open_regular,
                     parent_fd, rename_noreplace)
 from .paths import PathError, PathGuard, ext_of, fold
@@ -31,11 +32,9 @@ HISTORY_TEXT_MAX = 2 * 1024 * 1024
 VIEW_ONLY_EXT = frozenset({"docx"})
 
 
-class EditError(Exception):
+class EditError(HttpError):
     def __init__(self, status: int, detail: str, **extra):
-        super().__init__(detail)
-        self.status = status
-        self.detail = detail
+        super().__init__(status, detail)
         self.extra = extra
 
     def body(self) -> dict:

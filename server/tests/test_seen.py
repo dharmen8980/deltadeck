@@ -4,14 +4,12 @@ root, the RootGate checks, path refusals, the data-dir overlap refusal, root swi
 import hashlib
 import json
 import os
-import socket
 import sqlite3
 import threading
 
 import httpx
 import pytest
-import uvicorn
-from conftest import snapshot_fs, wait_until, write
+from conftest import free_port, snapshot_fs, start_server, stop_server, wait_until, write
 from test_roots import canon, outer, post
 
 from viewer.config import Settings, save_state
@@ -407,21 +405,12 @@ def test_events_published_to_the_root_store(c):
     assert q.empty()
 
 
-def _free_port():
-    with socket.socket() as s:
-        s.bind(("127.0.0.1", 0))
-        return s.getsockname()[1]
-
-
 def test_seen_event_on_the_sse_stream(tmp_path, two):
     a, _ = two
-    port = _free_port()
+    port = free_port()
     sw = RootSwitcher(Settings.make(str(a), port=port, data_dir=str(tmp_path / "data"),
                                     ui_dir=str(tmp_path / "no-ui"), reconcile_interval=0, watch=False), picker=None)
-    server = uvicorn.Server(uvicorn.Config(sw, host="127.0.0.1", port=port, log_level="warning",
-                                           timeout_graceful_shutdown=2))
-    th = threading.Thread(target=server.run, daemon=True)
-    th.start()
+    server, th = start_server(sw, port)
     base = f"http://127.0.0.1:{port}"
     lines: list[str] = []
     connected = threading.Event()
@@ -449,6 +438,5 @@ def test_seen_event_on_the_sse_stream(tmp_path, two):
         data = next(json.loads(x[5:]) for x in lines if x.startswith("data:"))
         assert data == {"paths": ["a.md"], "client": "c9"}
     finally:
-        server.should_exit = True
-        th.join(10)
+        stop_server(server, th)
     assert not os.path.exists(a / SEEN_FILE)

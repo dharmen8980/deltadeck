@@ -1,26 +1,18 @@
-"""Regression tests for review findings (deny bypasses, long-line lookup, index races, symlinks)."""
+"""Path and index edge cases: Unicode deny bypasses, long-line lookup, index races, symlinks,
+forwarded hosts."""
 
 import os
 import unicodedata
 
 import pytest
 
-from conftest import running, wait_until, write
+from conftest import case_insensitive, running, wait_until, write
 from viewer.config import Settings
 from viewer.paths import PathGuard
 from viewer.search import SearchIndex, match_lines, needles_for
 from viewer.store import Store
 
 ENDPOINTS = ("/api/file", "/api/content", "/api/text", "/api/raw", "/api/csv")
-
-
-def _case_insensitive(root) -> bool:
-    probe = root / "zqCaseProbe"
-    probe.write_text("x")
-    try:
-        return os.path.exists(root / "zqcaseprobe")
-    finally:
-        probe.unlink()
 
 
 def test_long_s_does_not_bypass_deny(root):
@@ -38,7 +30,7 @@ def test_long_s_does_not_bypass_deny(root):
             assert b"zqsecretdata" not in r.content
         # allowed files still work, and a differently-cased request maps to the on-disk name
         assert c.get("/api/file", params={"path": "sub/ok.md"}).status_code == 200
-        if _case_insensitive(root):
+        if case_insensitive(root):
             r = c.get("/api/file", params={"path": "SUB/OK.md"})
             assert r.status_code == 200 and r.json()["path"] == "sub/ok.md"
 
@@ -91,11 +83,23 @@ def test_match_lines_prefers_lines_with_all_terms():
     assert count == 12
 
 
+_indexes: list[SearchIndex] = []
+
+
+@pytest.fixture(autouse=True)
+def _stop_indexes():
+    yield
+    while _indexes:
+        _indexes.pop().stop()  # deletes its temporary index file
+
+
 def _make_store(root):
     s = Settings.make(str(root))
     store = Store(PathGuard(s))
     store.full_scan()
-    return store, SearchIndex(store, s.search_max_bytes)
+    ix = SearchIndex(store, s.search_max_bytes)
+    _indexes.append(ix)
+    return store, ix
 
 
 def test_stale_upsert_does_not_drop_fresh_row(root):

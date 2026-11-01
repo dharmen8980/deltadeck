@@ -18,6 +18,8 @@ DEFAULT_PORT = 8765
 DEFAULT_DENY = (".env", ".env*", "*token*", "*secret*", "*credential*", "*.pem", "*.key")
 DEFAULT_IGNORE = ("__pycache__", "*.pyc", ".DS_Store", "node_modules", ".venv", ".git", ".ldv-tmp-*")
 DEFAULT_SEARCH_MAX_MB = 2.0
+DEFAULT_SEARCH_MAX_FILES = 100_000  # files content-indexed in all (viewer.search)
+DEFAULT_SEARCH_MAX_TOTAL_MB = 2048.0  # their sizes added up
 # server/viewer/config.py -> <app>/web/out
 DEFAULT_UI_DIR = str(Path(__file__).resolve().parents[2] / "web" / "out")
 # editing (tier 3, opt-in)
@@ -35,8 +37,15 @@ class ConfigError(ValueError):
     pass
 
 
-def _fold(s: str) -> str:
-    return unicodedata.normalize("NFKC", unicodedata.normalize("NFKC", s).casefold())
+def fold(name: str) -> str:
+    """Canonical form for name matching: NFKC + casefold (so e.g. U+017F 'long s' == 's',
+    NFD == NFC). APFS is case- and normalisation-insensitive, so plain .lower() is not enough."""
+    return unicodedata.normalize("NFKC", unicodedata.normalize("NFKC", name).casefold())
+
+
+def root_key(root: str) -> str:
+    """Short stable name for a canonical root path (recovery store dir, search index file)."""
+    return hashlib.sha256(root.encode("utf-8")).hexdigest()[:24]
 
 
 def canonical_path(path: str) -> str:
@@ -101,10 +110,8 @@ def path_within(child: str, parent: str) -> bool:
     """True if child is parent or below it, robust to case/normalisation variants (APFS) and to
     symlinks. Errs towards True (folded string comparison) because it guards the recovery store."""
     c, p = canonical_path(child), canonical_path(parent)
-    return _str_within(c, p) or _str_within(_fold(c), _fold(p)) or _id_within(c, p)
+    return _str_within(c, p) or _str_within(fold(c), fold(p)) or _id_within(c, p)
 
-
-_within = path_within  # backwards-compatible name
 
 
 @dataclass
@@ -114,8 +121,13 @@ class Settings:
     deny: tuple[str, ...] = DEFAULT_DENY
     ignore: tuple[str, ...] = DEFAULT_IGNORE
     search_max_bytes: int = int(DEFAULT_SEARCH_MAX_MB * 1024 * 1024)
+    search_max_files: int = DEFAULT_SEARCH_MAX_FILES
+    search_max_total_bytes: int = int(DEFAULT_SEARCH_MAX_TOTAL_MB * 1024 * 1024)
     ui_dir: str = DEFAULT_UI_DIR
-    reconcile_interval: float = 10.0
+    # backstop rescans (seconds; None = default, 0 = off): directory pass / full pass
+    reconcile_interval: float | None = None
+    full_reconcile_interval: float | None = None
+    rescan_when_idle: bool = False  # keep the backstop running while no client is connected
     watch: bool = True
     allow_edit: bool = False
     data_dir: str = DEFAULT_DATA_DIR
@@ -136,8 +148,6 @@ class Settings:
         self.data_dir = canonical_path(self.data_dir)
         self.upload_ext = tuple(sorted({e.strip().lower().lstrip(".") for e in self.upload_ext if e.strip()}))
         self.history_keep = max(1, int(self.history_keep))
-        from .paths import fold  # local import: paths imports config
-
         self.deny = tuple(fold(p) for p in self.deny)
         self.ignore = tuple(fold(p) for p in self.ignore)
 
@@ -149,7 +159,7 @@ class Settings:
 
     @property
     def root_key(self) -> str:
-        return hashlib.sha256(self.root.encode("utf-8")).hexdigest()[:24]
+        return root_key(self.root)
 
     @property
     def store_dir(self) -> str:
@@ -198,6 +208,12 @@ def build_parser() -> argparse.ArgumentParser:
                    help="extra ignore pattern (repeatable; env DOCS_VIEWER_IGNORE comma-separated)")
     p.add_argument("--search-max-mb", type=float,
                    help="max file size indexed for search, MB (env DOCS_VIEWER_SEARCH_MAX_MB, default 2)")
+    p.add_argument("--search-max-files", type=int,
+                   help=f"max files content-indexed in all (env DOCS_VIEWER_SEARCH_MAX_FILES, "
+                        f"default {DEFAULT_SEARCH_MAX_FILES})")
+    p.add_argument("--search-max-total-mb", type=float,
+                   help="max total size of the content-indexed files, MB (env DOCS_VIEWER_SEARCH_MAX_TOTAL_MB, "
+                        f"default {DEFAULT_SEARCH_MAX_TOTAL_MB:g})")
     p.add_argument("--ui-dir", help=f"built UI directory (default {DEFAULT_UI_DIR})")
     p.add_argument("--allow-edit", action="store_true", default=None,
                    help="enable editing and file management (env DOCS_VIEWER_ALLOW_EDIT=1; default off)")
@@ -211,14 +227,30 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--desktop", action="store_true", default=None,
                    help="run as the desktop app's server (env DOCS_VIEWER_DESKTOP=1; needs DOCS_VIEWER_BRIDGE_URL "
                         "and DOCS_VIEWER_BRIDGE_TOKEN; prints LDV_READY <url> and exits when stdin closes)")
+    p.add_argument("--rescan-interval", type=float, metavar="SECONDS",
+                   help="backstop directory pass, catches creates/deletes/renames the watcher missed "
+                        "(env DOCS_VIEWER_RESCAN_INTERVAL; default 300, 60 on a network volume; 0 = off)")
+    p.add_argument("--full-rescan-interval", type=float, metavar="SECONDS",
+                   help="backstop full pass, also catches in-place edits the watcher missed "
+                        "(env DOCS_VIEWER_FULL_RESCAN_INTERVAL; default 1800, 600 on a network volume; 0 = off)")
+    p.add_argument("--rescan-when-idle", action="store_true", default=None,
+                   help="keep the backstop passes running while no browser is connected "
+                        "(env DOCS_VIEWER_RESCAN_WHEN_IDLE=1; default: paused, one pass on reconnect)")
     p.add_argument("--git", metavar="PATH|off",
                    help="git executable for the read-only git views, or 'off' (env DOCS_VIEWER_GIT; "
                         "default: found on PATH and the usual install locations)")
     return p
 
 
-def _truthy(v: str | None) -> bool:
-    return (v or "").strip().lower() in ("1", "true", "yes", "on")
+def truthy(v: object) -> bool:
+    """An env var or form field that says yes ("1", "true", "yes", "on"); anything else, None
+    or a non-string (an uploaded file) is False."""
+    return isinstance(v, str) and v.strip().lower() in ("1", "true", "yes", "on")
+
+
+def _float_env(env, name: str) -> float | None:
+    v = (env.get(name) or "").strip()
+    return float(v) if v else None
 
 
 def _state_path(data_dir: str) -> str:
@@ -271,24 +303,36 @@ def settings_from_args(argv: list[str] | None = None, env: dict | None = None) -
         last = load_state(canonical_path(data_dir))["last_root"]
         root, source = (last, "state") if last and os.path.isdir(last) else (None, "")
     port = a.port if a.port is not None else int(env.get("DOCS_VIEWER_PORT") or DEFAULT_PORT)
-    desktop = bool(a.desktop) or _truthy(env.get("DOCS_VIEWER_DESKTOP"))
+    desktop = bool(a.desktop) or truthy(env.get("DOCS_VIEWER_DESKTOP"))
     mb = a.search_max_mb if a.search_max_mb is not None else float(
         env.get("DOCS_VIEWER_SEARCH_MAX_MB") or DEFAULT_SEARCH_MAX_MB)
+    max_files = a.search_max_files if a.search_max_files is not None else int(
+        env.get("DOCS_VIEWER_SEARCH_MAX_FILES") or DEFAULT_SEARCH_MAX_FILES)
+    total_mb = a.search_max_total_mb if a.search_max_total_mb is not None else float(
+        env.get("DOCS_VIEWER_SEARCH_MAX_TOTAL_MB") or DEFAULT_SEARCH_MAX_TOTAL_MB)
+    rescan = a.rescan_interval if a.rescan_interval is not None else _float_env(env, "DOCS_VIEWER_RESCAN_INTERVAL")
+    full_rescan = a.full_rescan_interval if a.full_rescan_interval is not None else _float_env(
+        env, "DOCS_VIEWER_FULL_RESCAN_INTERVAL")
     return Settings.make(
         root,
         port=port,
+        reconcile_interval=None if rescan is None else max(0.0, rescan),
+        full_reconcile_interval=None if full_rescan is None else max(0.0, full_rescan),
+        rescan_when_idle=bool(a.rescan_when_idle) or truthy(env.get("DOCS_VIEWER_RESCAN_WHEN_IDLE")),
         deny=list(a.deny) + _split_env(env.get("DOCS_VIEWER_DENY")),
         ignore=list(a.ignore) + _split_env(env.get("DOCS_VIEWER_IGNORE")),
         no_default_deny=a.no_default_deny,
         search_max_bytes=int(mb * 1024 * 1024),
+        search_max_files=max(1, max_files),
+        search_max_total_bytes=max(1, int(total_mb * 1024 * 1024)),
         ui_dir=a.ui_dir or DEFAULT_UI_DIR,
-        allow_edit=bool(a.allow_edit) or _truthy(env.get("DOCS_VIEWER_ALLOW_EDIT")),
+        allow_edit=bool(a.allow_edit) or truthy(env.get("DOCS_VIEWER_ALLOW_EDIT")),
         data_dir=data_dir,
         history_keep=a.history_keep if a.history_keep is not None else DEFAULT_HISTORY_KEEP,
         upload_max_bytes=int((a.upload_max_mb if a.upload_max_mb is not None else DEFAULT_UPLOAD_MAX_MB)
                              * 1024 * 1024),
         upload_ext=tuple(e for v in a.upload_ext for e in _split_env(v)) if a.upload_ext else DEFAULT_UPLOAD_EXT,
-        lock_root=bool(a.lock_root) or _truthy(env.get("DOCS_VIEWER_LOCK_ROOT")),
+        lock_root=bool(a.lock_root) or truthy(env.get("DOCS_VIEWER_LOCK_ROOT")),
         root_source=source,
         desktop=desktop,
         bridge_url=(env.get("DOCS_VIEWER_BRIDGE_URL") or "").strip() if desktop else "",

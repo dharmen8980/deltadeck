@@ -5,17 +5,14 @@ import asyncio
 import contextlib
 import os
 import re
-import socket
 import struct
-import threading
 import time
 import zlib
 
 import httpx
 import pytest
-import uvicorn
 
-from conftest import running, write
+from conftest import free_port, running, start_server, stop_server, write
 from viewer.app import create_app
 from viewer.config import DEFAULT_UI_DIR, Settings
 from viewer.pdf import PdfRenderer, find_chrome, make_route_guard, make_ws_guard, same_origin, sweep_stale_profiles
@@ -237,21 +234,12 @@ def _first_mediabox(data: bytes) -> tuple[float, float]:
     return x1 - x0, y1 - y0
 
 
-def _free_port():
-    with socket.socket() as s:
-        s.bind(("127.0.0.1", 0))
-        return s.getsockname()[1]
-
-
 @contextlib.contextmanager
 def real_server(root):
-    port = _free_port()
+    port = free_port()
     settings = Settings.make(str(root), port=port, watch=False, reconcile_interval=0, ui_dir=DEFAULT_UI_DIR)
     app = create_app(settings)
-    server = uvicorn.Server(uvicorn.Config(app, host="127.0.0.1", port=port, log_level="warning",
-                                           lifespan="on"))
-    t = threading.Thread(target=server.run, daemon=True)
-    t.start()
+    server, t = start_server(app, port, lifespan="on", timeout_graceful_shutdown=None)
     deadline = time.monotonic() + 15
     while not server.started:
         if time.monotonic() > deadline or not t.is_alive():
@@ -260,8 +248,7 @@ def real_server(root):
     try:
         yield app, f"http://127.0.0.1:{port}"
     finally:
-        server.should_exit = True
-        t.join(timeout=30)
+        stop_server(server, t, timeout=30)
 
 
 needs_chrome = pytest.mark.skipif(

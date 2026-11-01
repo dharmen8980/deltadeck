@@ -7,12 +7,13 @@ import fnmatch
 import mimetypes
 import os
 import posixpath
+import re
 import stat as stat_mod
 import threading
-import unicodedata
 from dataclasses import dataclass
 
-from .config import Settings, canonical_path, path_within
+from .config import Settings, canonical_path, fold, path_within  # fold: re-exported for store/edit
+from .errors import HttpError
 
 EXT_KINDS: dict[str, str] = {}
 for _kind, _exts in {
@@ -24,11 +25,14 @@ for _kind, _exts in {
     "csv": "csv tsv",
     "xlsx": "xlsx",
     "docx": "docx",
-    "code": "py sh bash zsh js mjs ts tsx yaml yml toml sql ini cfg html css",
+    "code": "py pyi sh bash zsh js mjs cjs jsx ts mts cts tsx yaml yml toml sql ini cfg html htm css scss less "
+            "java cs",
     "text": "log out txt jsonl ndjson",
 }.items():
     for _e in _exts.split():
         EXT_KINDS[_e] = _kind
+
+PATH_MAX = 4096  # longest stored root-relative path check_rel accepts
 
 INLINE_MIME = {
     "png": "image/png", "jpg": "image/jpeg", "jpeg": "image/jpeg", "gif": "image/gif",
@@ -36,17 +40,27 @@ INLINE_MIME = {
 }
 
 
-def fold(name: str) -> str:
-    """Canonical form for name matching: NFKC + casefold (so e.g. U+017F 'long s' == 's',
-    NFD == NFC). APFS is case- and normalisation-insensitive, so plain .lower() is not enough."""
-    return unicodedata.normalize("NFKC", unicodedata.normalize("NFKC", name).casefold())
+class PathError(HttpError):
+    pass
 
 
-class PathError(Exception):
-    def __init__(self, status: int, detail: str):
-        super().__init__(detail)
-        self.status = status
-        self.detail = detail
+def check_rel(rel: object, hidden) -> str | None:
+    """Lexical path check for stored paths (the file may no longer exist: deleted or renamed).
+    The path must be a normalised root-relative POSIX path with no denied/ignored component
+    (`hidden(rel)`, PathGuard.rel_hidden). Returns the path, or None if it is refused."""
+    if not isinstance(rel, str) or not rel or len(rel) > PATH_MAX or "\0" in rel or "\\" in rel:
+        return None
+    if rel.startswith("/") or os.path.isabs(rel) or posixpath.normpath(rel) != rel:
+        return None
+    if any(c in ("", ".", "..") for c in rel.split("/")):
+        return None
+    try:
+        rel.encode("utf-8")
+    except UnicodeEncodeError:  # lone surrogates
+        return None
+    if hidden(rel):
+        return None
+    return rel
 
 
 @dataclass(frozen=True)
@@ -69,15 +83,21 @@ def is_binary_file(path: str) -> bool:
         return True
 
 
+def is_dockerfile(name: str) -> bool:
+    """"Dockerfile", "Dockerfile.dev", "app.dockerfile" (any case), like the UI's isDockerfile."""
+    lower = name.lower()
+    return lower == "dockerfile" or lower.startswith("dockerfile.") or lower.endswith(".dockerfile")
+
+
 def kind_of(name: str, real_path: str | None = None) -> str:
-    if name == "Dockerfile":
-        return "code"
     ext = ext_of(name)
+    kind = EXT_KINDS.get(ext) if ext else None
+    if kind:
+        return kind  # a known extension wins: Dockerfile.md stays markdown
+    if is_dockerfile(name) and (not ext or real_path is None or not is_binary_file(real_path)):
+        return "code"  # bare "Dockerfile" skips the binary check, as before
     if not ext:
         return "text"
-    kind = EXT_KINDS.get(ext)
-    if kind:
-        return kind
     if real_path is not None and is_binary_file(real_path):
         return "binary"
     return "text"
@@ -110,6 +130,10 @@ class PathGuard:
             self.excluded = (cdd,)
             self._excluded_fold = (fold(cdd),)
         self._listings = threading.local()  # see cached_listings
+        # every deny and ignore pattern as one regex: the tree walker tests each name once
+        # (same result as is_hidden: fnmatchcase is re.match of fnmatch.translate)
+        pats = tuple(self.deny) + tuple(self.ignore)
+        self._hidden_rx = re.compile("|".join(f"(?:{fnmatch.translate(p)})" for p in pats)) if pats else None
 
     @contextlib.contextmanager
     def cached_listings(self):
@@ -180,9 +204,13 @@ class PathGuard:
     def is_hidden(self, name: str) -> bool:
         return self.is_denied(name) or self.is_ignored(name)
 
+    def is_hidden_fast(self, name: str) -> bool:
+        """is_hidden with one regex match (for the walker, which tests every name in the tree)."""
+        return self._hidden_rx is not None and self._hidden_rx.match(fold(name)) is not None
+
     def rel_hidden(self, rel: str) -> bool:
         """True if any component of a root-relative POSIX path is denied/ignored."""
-        return any(self.is_hidden(c) for c in rel.split("/") if c and c not in (".", ".."))
+        return any(self.is_hidden_fast(c) for c in rel.split("/") if c and c not in (".", ".."))
 
     def disk_names(self, rel: str) -> list[str] | None:
         """Map each component of a root-relative path to the name(s) that really exist on disk.

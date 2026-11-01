@@ -30,6 +30,8 @@ import time
 from dataclasses import dataclass
 from urllib.parse import urlencode, urlsplit
 
+from .errors import HttpError
+
 log = logging.getLogger("viewer.pdf")
 
 READY_TIMEOUT_MS = 45_000
@@ -119,11 +121,8 @@ def sweep_stale_profiles(tmpdir: str | None = None, *, max_age_s: float = STALE_
     return removed
 
 
-class PdfError(Exception):
-    def __init__(self, status: int, detail: str):
-        super().__init__(detail)
-        self.status = status
-        self.detail = detail
+class PdfError(HttpError):
+    pass
 
 
 def find_chrome() -> str | None:

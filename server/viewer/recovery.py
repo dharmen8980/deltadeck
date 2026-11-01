@@ -23,15 +23,14 @@ import sys
 import threading
 import time
 
+from .errors import HttpError
+
 ID_RE = re.compile(r"^[0-9]{20}-[0-9a-f]{8}$")
 COPY_CHUNK = 1024 * 1024
 
 
-class RecoveryError(Exception):
-    def __init__(self, status: int, detail: str):
-        super().__init__(detail)
-        self.status = status
-        self.detail = detail
+class RecoveryError(HttpError):
+    pass
 
 
 def new_id() -> str:

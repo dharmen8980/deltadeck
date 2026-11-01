@@ -343,7 +343,7 @@ def test_api_docx(root):
 
 def test_api_docx_size_limit(root, monkeypatch):
     rich(root / "big.docx")
-    monkeypatch.setattr("viewer.app.DOCX_MAX", 100)
+    monkeypatch.setattr("viewer.file_routes.DOCX_MAX", 100)
     with running(root) as c:
         assert c.get("/api/docx?path=big.docx").status_code == 413
 

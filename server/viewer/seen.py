@@ -16,7 +16,6 @@ import contextlib
 import hashlib
 import logging
 import os
-import posixpath
 import sqlite3
 import threading
 import time
@@ -27,9 +26,10 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field
 
-from .app import SEEN_PREFIX
-from .paths import PathError, ext_of
-from .readers import CONTENT_MAX
+from .errors import no_store_json
+from .http_common import SEEN_PREFIX
+from .paths import PathError, check_rel, ext_of
+from .readers import CONTENT_MAX, read_content
 
 log = logging.getLogger("viewer")
 
@@ -39,7 +39,6 @@ SNAPSHOT_MAX_CHARS = CONTENT_MAX  # /api/content serves at most this, so a fetch
 SNAPSHOTS_TOTAL_CHARS = 64 * 1024 * 1024
 SNAPSHOTS_MAX = 1000
 SEEN_MAX_PER_ROOT = 20000
-PATH_MAX = 4096
 SHA256_HEX = r"^[0-9a-f]{64}$"
 # a 2M-char snapshot JSON-encodes to at most 6 bytes per UTF-16 unit (\u00XX); plus mark entries
 SEEN_JSON_MAX = SNAPSHOT_MAX_CHARS * 6 + 4 * 1024 * 1024
@@ -61,25 +60,6 @@ _UNSET = object()  # commit(text=_UNSET): leave the snapshot alone
 
 def utf16_len(text: str) -> int:
     return len(text.encode("utf-16-le", "surrogatepass")) // 2
-
-
-def check_rel(rel: object, hidden) -> str | None:
-    """Lexical path check for stored paths (the file may no longer exist: deleted or renamed).
-    The path must be a normalised root-relative POSIX path with no denied/ignored component
-    (`hidden(rel)`, PathGuard.rel_hidden). Returns the path, or None if it is refused."""
-    if not isinstance(rel, str) or not rel or len(rel) > PATH_MAX or "\0" in rel or "\\" in rel:
-        return None
-    if rel.startswith("/") or os.path.isabs(rel) or posixpath.normpath(rel) != rel:
-        return None
-    if any(c in ("", ".", "..") for c in rel.split("/")):
-        return None
-    try:
-        rel.encode("utf-8")
-    except UnicodeEncodeError:  # lone surrogates
-        return None
-    if hidden(rel):
-        return None
-    return rel
 
 
 def _is_full(e: sqlite3.Error) -> bool:
@@ -287,13 +267,11 @@ def text_if_digest(real: str, digest: str) -> str | None:
     SHA-256 of its UTF-8 encoding is `digest`, i.e. it is exactly the text the UI showed. None if
     it differs (changed again since), is over the /api/content limit or cannot be read."""
     try:
-        with open(real, "rb") as f:
-            data = f.read(CONTENT_MAX + 1)
+        _, text = read_content(real)
     except OSError:
         return None
-    if len(data) > CONTENT_MAX:
+    if text is None:
         return None
-    text = data.decode("utf-8", errors="replace")
     return text if hashlib.sha256(text.encode("utf-8")).hexdigest() == digest else None
 
 
@@ -355,16 +333,12 @@ class RenameBody(_Body):
     to: str
 
 
-NO_STORE = {"Cache-Control": "no-store"}
-
-
 def register_seen_routes(app: FastAPI, db: SeenDB, current: Callable[[], object | None]) -> None:
     """/api/seen* on the RootSwitcher's control app. `current()` -> the inner app wrapper
     (`.app.state.store`, `.settings`) or None. Every request names the root it was made for; a
     mismatch (the folder was switched since) is a 409, so a stale tab never writes into another
     root's history. Writes are guarded by RootGate (token, Origin, Sec-Fetch-Site, JSON)."""
-    def j(data: dict, status: int = 200) -> JSONResponse:
-        return JSONResponse(data, status_code=status, headers=NO_STORE)
+    j = no_store_json
 
     @app.exception_handler(RequestValidationError)
     async def invalid_body(request: Request, exc: RequestValidationError):

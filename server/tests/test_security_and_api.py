@@ -6,6 +6,7 @@ import pytest
 
 from conftest import running, write
 from viewer.app import CSP, find_repo_prefix
+from viewer.paths import kind_of
 
 
 @pytest.fixture
@@ -64,6 +65,16 @@ def test_kinds_and_raw(tree):
         assert kinds["doc.md"] == "markdown" and kinds["script.py"] == "code"
         assert kinds["Dockerfile"] == "code" and kinds["parity_logs/run_offset"] == "text"
         assert kinds["blob.bin"] == "binary" and kinds["img.svg"] == "image" and kinds["doc.pdf"] == "pdf"
+        # languages with a code outline open in the code viewer
+        for name in ("A.java", "a.cs", "a.pyi", "a.jsx", "a.cjs", "a.mts", "a.htm", "a.scss", "a.less"):
+            assert kind_of(name) == "code", name
+        # Dockerfile variants are code (like the UI's isDockerfile); a known extension still wins
+        for name in ("Dockerfile.dev", "dockerfile", "Dockerfile.prod.arm64", "app.dockerfile"):
+            assert kind_of(name) == "code", name
+        assert kind_of("Dockerfile.md") == "markdown" and kind_of("Dockerfiles") == "text"
+        blob = tree / "Dockerfile.bin"
+        blob.write_bytes(b"\0\1\2")
+        assert kind_of("Dockerfile.bin", str(blob)) == "binary"  # the binary check still applies
         f = c.get("/api/file?path=img.png").json()
         assert f["mime"] == "image/png" and f["name"] == "img.png" and isinstance(f["mtime"], float)
 

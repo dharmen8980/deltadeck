@@ -22,17 +22,7 @@ from pydantic import BaseModel, ConfigDict
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from . import __version__
-from .app import (
-    ALLOWED_HOSTS,
-    ROOTS_PREFIX,
-    SecurityMiddleware,
-    _same_site_request,
-    create_app,
-    is_gated_path,
-    is_roots_path,
-    is_seen_path,
-    mount_ui,
-)
+from .app import SecurityMiddleware, config_payload, create_app, mount_ui
 from .config import (
     RECENT_MAX,
     ConfigError,
@@ -42,7 +32,18 @@ from .config import (
     path_within,
     save_state,
 )
-from .edit_routes import DEV_UI_PORT, MAX_UPLOAD_FILES, _send_json
+from .edit_routes import DEV_UI_PORT
+from .errors import HttpError, no_store_json
+from .http_common import (
+    ALLOWED_HOSTS,
+    ROOTS_PREFIX,
+    is_gated_path,
+    is_roots_path,
+    is_seen_path,
+    same_site_request,
+    send_json,
+)
+from .search import INDEX_DIR, prune_indexes
 from .seen import SEEN_JSON_MAX, SeenDB, register_seen_routes, seen_disabled_reason
 
 log = logging.getLogger("viewer")
@@ -50,15 +51,13 @@ log = logging.getLogger("viewer")
 PICK_TIMEOUT = 600.0  # seconds a native folder dialog may stay open
 PICK_PROMPT = "Choose a folder to view"
 ROOTS_JSON_MAX = 64 * 1024
-NO_STORE = {"Cache-Control": "no-store"}
 
 Picker = Callable[[], Awaitable[str | None]]  # -> chosen folder, or None if cancelled
 
 
-class PickerError(Exception):
+class PickerError(HttpError):
     def __init__(self, detail: str, status: int = 500):  # status: what /api/roots/pick answers
-        super().__init__(detail)
-        self.status = status
+        super().__init__(status, detail)
 
 
 async def _run_dialog(cmd: list[str], cancelled: Callable[[int, str], bool]) -> str | None:
@@ -182,7 +181,7 @@ class RootGate:
         refusal = self._refusal(scope)
         if refusal is not None:
             extra = [(b"allow", b"GET, HEAD, POST")] if refusal[0] == 405 else []
-            return await _send_json(send, refusal[0], {"detail": refusal[1]}, extra)
+            return await send_json(send, refusal[0], {"detail": refusal[1]}, extra)
         if scope["method"] != "POST":
             return await self.app(scope, receive, send)
         limit = SEEN_JSON_MAX if is_seen_path(scope["path"]) else ROOTS_JSON_MAX
@@ -190,9 +189,9 @@ class RootGate:
             if k.lower() == b"content-length":
                 try:
                     if int(v) > limit:
-                        return await _send_json(send, 413, {"detail": "request body too large"})
+                        return await send_json(send, 413, {"detail": "request body too large"})
                 except ValueError:
-                    return await _send_json(send, 400, {"detail": "invalid content-length"})
+                    return await send_json(send, 400, {"detail": "invalid content-length"})
         chunks, size, more = [], 0, True  # buffer the body under a hard limit, then replay it
         while more:
             msg = await receive()
@@ -201,7 +200,7 @@ class RootGate:
             chunk = msg.get("body", b"")
             size += len(chunk)
             if size > limit:
-                return await _send_json(send, 413, {"detail": "request body too large"})
+                return await send_json(send, 413, {"detail": "request body too large"})
             chunks.append(chunk)
             more = msg.get("more_body", False)
         body = b"".join(chunks)
@@ -269,6 +268,22 @@ class RootSwitcher:
         self.state["last_root"] = root
         self.state["recent"] = ([root] + [p for p in self.state["recent"] if p != root])[:RECENT_MAX]
         self._save()
+        self._prune_search()
+
+    def _prune_search(self) -> None:
+        """Search indexes are kept for the current and the recent folders only (others are
+        deleted unless another viewer is using them)."""
+        s = self.base
+        if self.current is not None and path_within(s.data_dir, self.current):
+            return
+        keep = [self.current, *self.state["recent"]]
+        try:
+            removed = prune_indexes(os.path.join(s.data_dir, INDEX_DIR), keep)
+        except OSError as e:
+            log.warning("could not prune search indexes: %s", e)
+            return
+        if removed:
+            log.info("removed %d search index(es) of folders no longer recent", len(removed))
 
     def _save(self) -> None:
         s = self.base
@@ -289,7 +304,7 @@ class RootSwitcher:
 
     def _config_extra(self, request: Request, settings: Settings | None = None) -> dict:
         out: dict = {"root_switch_enabled": not self.locked, "seen_enabled": self._seen_enabled(settings)}
-        if _same_site_request(request):
+        if same_site_request(request):
             out["root_token"] = self.token
         return out
 
@@ -371,8 +386,7 @@ class RootSwitcher:
                                                    "operation_spans": False, "auto_configure": False})
 
         # every handler is async: self.state is only touched on the event-loop thread (no worker-thread races)
-        def j(data: dict, status: int = 200) -> JSONResponse:
-            return JSONResponse(data, status_code=status, headers=NO_STORE)
+        j = no_store_json
 
         @app.api_route(ROOTS_PREFIX, methods=["GET", "HEAD"])
         async def roots_get():
@@ -421,6 +435,7 @@ class RootSwitcher:
             if self.state["last_root"] == b.path:
                 self.state["last_root"] = self.current
             self._save()
+            self._prune_search()
             return j(self.roots_info())
 
         register_seen_routes(app, self.seen, lambda: self.inner)
@@ -432,12 +447,8 @@ class RootSwitcher:
         # no folder selected (only reached when there is no inner app)
         @app.api_route("/api/config", methods=["GET", "HEAD"])
         async def config_no_root(request: Request):
-            return j({"no_root": True, "root_name": None, "root_path": None, "repo_prefix": "",
-                      "search_max_bytes": s.search_max_bytes, "version": __version__, "edit_enabled": False,
-                      "deny_patterns": list(s.deny), "ignore_patterns": list(s.ignore),
-                      "upload_ext": list(s.upload_ext), "upload_max_bytes": s.upload_max_bytes,
-                      "edit_max_bytes": s.edit_max_bytes, "upload_max_files": MAX_UPLOAD_FILES,
-                      "git_enabled": False, **self._config_extra(request)})
+            return j({**config_payload(s, root_present=False, editor=None, git_enabled=False),
+                      **self._config_extra(request)})
 
         @app.api_route("/api/{rest:path}", methods=["GET", "HEAD", "POST", "PUT", "DELETE"])
         async def no_root(rest: str):

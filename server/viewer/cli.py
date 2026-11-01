@@ -14,8 +14,8 @@ from .roots import RootSwitcher
 
 
 def self_check() -> None:
-    """Hidden `--self-check` (packaging): the frozen binary has the app, SQLite FTS5, mammoth (.docx)
-    and no playwright."""
+    """Hidden `--self-check` (packaging): the frozen binary has the app, SQLite FTS5, mammoth (.docx),
+    the file watcher's native backend (watchfiles) and no playwright."""
     import importlib.util
     import io
     import sqlite3
@@ -23,11 +23,20 @@ def self_check() -> None:
 
     from . import app, desktop  # noqa: F401 - import errors are the check
     from .docx import convert_docx
+    from .search import CONTENTLESS_DELETE, TOKENIZE
 
+    # store.py imports watchfiles lazily: check its native (FSEvents/inotify) extension made it into the bundle
+    from watchfiles import _rust_notify  # noqa: F401
+
+    # the search index's table: contentless FTS5, its tokenizer, and contentless_delete when SQLite has it
     db = sqlite3.connect(":memory:")
-    db.execute("CREATE VIRTUAL TABLE t USING fts5(body)")
-    db.execute("INSERT INTO t VALUES ('hello frozen world')")
-    assert db.execute("SELECT count(*) FROM t WHERE t MATCH 'frozen'").fetchone()[0] == 1
+    opts = ", contentless_delete=1" if CONTENTLESS_DELETE else ""
+    db.execute(f"CREATE VIRTUAL TABLE t USING fts5(body, content=''{opts}, tokenize='{TOKENIZE}')")
+    db.execute("INSERT INTO t (rowid, body) VALUES (1, 'hello frozen café')")
+    assert db.execute("SELECT count(*) FROM t WHERE t MATCH 'frozen AND cafe'").fetchone()[0] == 1
+    if CONTENTLESS_DELETE:
+        db.execute("DELETE FROM t WHERE rowid = 1")
+        assert db.execute("SELECT count(*) FROM t WHERE t MATCH 'frozen'").fetchone()[0] == 0
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w") as z:
         z.writestr("_rels/.rels", '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
@@ -39,8 +48,9 @@ def self_check() -> None:
     frozen = getattr(sys, "frozen", False)
     if frozen and importlib.util.find_spec("playwright") is not None:
         sys.exit("[viewer] self-check: playwright is bundled")
-    print(f"LDV_SELF_CHECK ok sqlite {sqlite3.sqlite_version} fts5 docx python {sys.version.split()[0]}"
-          f"{' frozen' if frozen else ''}")
+    delete = "contentless_delete" if CONTENTLESS_DELETE else "no-contentless_delete"
+    print(f"LDV_SELF_CHECK ok sqlite {sqlite3.sqlite_version} fts5 {delete} docx watchfiles"
+          f" python {sys.version.split()[0]}{' frozen' if frozen else ''}")
 
 
 def main(argv: list[str] | None = None) -> None:

@@ -5,18 +5,17 @@ import asyncio
 import contextlib
 import json
 import os
-import socket
 import stat
 import threading
 import time
 
 import httpx
 import pytest
-import uvicorn
-from conftest import wait_until, write
+from conftest import free_port, start_server, stop_server, wait_until, write
 from fastapi.testclient import TestClient
 
 from viewer import cli
+from viewer.app import config_payload
 from viewer.config import Settings, load_state, save_state, settings_from_args
 from viewer.roots import RootSwitcher
 
@@ -166,6 +165,24 @@ def test_no_root_mode(tmp_path):
         assert c.get("/api/config", headers={"X-Forwarded-Host": "evil.example"}).status_code == 400
         assert "root_token" not in c.get("/api/config", headers={"Sec-Fetch-Site": "cross-site"}).json()
 
+
+
+def test_no_root_config_matches_root_config(tmp_path):
+    """The no-folder /api/config has the same keys as a folder's (built by one function), desktop included."""
+    root = tmp_path / "docs"
+    write(root / "a.md", "# a\n")
+    with outer(None, tmp_path / "d1") as c:
+        none_cfg = c.get("/api/config").json()
+    with outer(root, tmp_path / "d2") as c:
+        root_cfg = c.get("/api/config").json()
+    assert none_cfg["desktop"] is False and root_cfg["desktop"] is False
+    assert set(none_cfg) == set(root_cfg)
+    assert none_cfg["no_root"] is True and root_cfg["no_root"] is False
+    # End to end with no folder; with a folder, desktop=True needs a live Electron bridge (PDF renderer).
+    with outer(None, tmp_path / "d3", desktop=True) as c:
+        assert c.get("/api/config").json()["desktop"] is True
+    s = Settings.make(None, data_dir=str(tmp_path / "d4"), desktop=True)
+    assert config_payload(s, root_present=False, editor=None, git_enabled=False)["desktop"] is True
 
 # -- pick / switch / forget ----------------------------------------------------------------------
 
@@ -342,25 +359,16 @@ def test_data_dir_inside_root_read_only_not_persisted(tmp_path):
 
 # -- lifespan / SSE / concurrency ----------------------------------------------------------------
 
-def _free_port():
-    with socket.socket() as s:
-        s.bind(("127.0.0.1", 0))
-        return s.getsockname()[1]
-
-
 def test_switch_ends_old_sse_and_lifespan_real_server(tmp_path, two):
     a, b = two
     dd = tmp_path / "data"
     save_state(str(dd), {"last_root": None, "recent": [canon(b)]})
-    port = _free_port()
+    port = free_port()
     sw = RootSwitcher(Settings.make(str(a), port=port, data_dir=str(dd), ui_dir=str(dd) + "-no-ui",
                                     reconcile_interval=0.5, watch=False), picker=None)
     retired = []
     sw.on_retire = retired.append
-    server = uvicorn.Server(uvicorn.Config(sw, host="127.0.0.1", port=port, log_level="warning",
-                                           timeout_graceful_shutdown=2))
-    th = threading.Thread(target=server.run, daemon=True)
-    th.start()
+    server, th = start_server(sw, port)
     base = f"http://127.0.0.1:{port}"
     try:
         wait_until(lambda: server.started, timeout=10)
@@ -394,8 +402,7 @@ def test_switch_ends_old_sse_and_lifespan_real_server(tmp_path, two):
         time.sleep(1.2)
         assert "ignored.md" not in {e.path for e in old_app.state.store.all_entries()}  # old loops stopped
     finally:
-        server.should_exit = True
-        th.join(10)
+        stop_server(server, th)
     assert not th.is_alive()
     assert sw.inner is None
 
@@ -447,10 +454,10 @@ def test_switched_away_index_stops_and_is_freed(tmp_path, two):
         c.sw._remember(canon(b))
         idx = c.sw.app.state.index
         wait_until(lambda: not idx.indexing)
-        assert idx._rows
+        assert idx.status()["indexed_files"] > 0 and idx.location == "data"
         assert post(c, "/api/roots/switch", {"path": canon(b)}).status_code == 200
-        assert idx._stopped.is_set() and idx._rows == {}
-        assert idx._db.execute("SELECT count(*) FROM docs").fetchone()[0] == 0
+        assert idx._stopped.is_set() and idx._db is None and idx._lock_fd is None
+        assert idx.search("x")["content"] == []
         assert not hasattr(c.sw, "retired")  # stopped apps are not kept by the switcher
     # a stopped index abandons its build instead of reading the whole old tree
     from viewer.paths import PathGuard
@@ -458,9 +465,12 @@ def test_switched_away_index_stops_and_is_freed(tmp_path, two):
     store = Store(PathGuard(Settings.make(str(a), data_dir=str(tmp_path / "data"))))
     store.full_scan()
     idx = SearchIndex(store, 1 << 20)
+    tmp = idx._tmp_dir
+    assert idx.location == "temp" and os.path.isdir(tmp)
     idx.stop()
     idx.build()
-    assert idx._rows == {} and not idx.indexing
+    assert idx.status()["indexed_files"] == 0 and not idx.indexing
+    assert not os.path.exists(tmp)  # the temporary index is deleted
 
 
 def test_control_handlers_run_on_event_loop(tmp_path):

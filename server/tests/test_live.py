@@ -2,14 +2,12 @@
 
 import json
 import os
-import socket
 import threading
 import time
 
 import httpx
-import uvicorn
 
-from conftest import running, wait_until, write
+from conftest import free_port, running, start_server, stop_server, wait_until, write
 from viewer.app import create_app
 from viewer.config import Settings
 
@@ -88,20 +86,11 @@ def test_in_place_file_rename_inferred(root):
     assert ch.added == [] and ch.deleted == []
 
 
-def _free_port():
-    with socket.socket() as s:
-        s.bind(("127.0.0.1", 0))
-        return s.getsockname()[1]
-
-
 def test_sse_change_event_real_server(root):
     write(root / "seed.md", "seed\n")
-    port = _free_port()
+    port = free_port()
     app = create_app(Settings.make(str(root), reconcile_interval=2, ui_dir=str(root) + "-no-ui"))
-    server = uvicorn.Server(uvicorn.Config(app, host="127.0.0.1", port=port, log_level="warning",
-                                           timeout_graceful_shutdown=2))
-    th = threading.Thread(target=server.run, daemon=True)
-    th.start()
+    server, th = start_server(app, port)
     try:
         wait_until(lambda: server.started, timeout=10)
         got: list[dict] = []
@@ -134,6 +123,5 @@ def test_sse_change_event_real_server(root):
         assert set(ev) == {"version", "added", "modified", "deleted", "renames", "dirs_changed"}
         assert ev["version"] >= 2
     finally:
-        server.should_exit = True
-        th.join(10)
+        stop_server(server, th)
     assert not th.is_alive()

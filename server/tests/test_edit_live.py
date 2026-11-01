@@ -2,34 +2,23 @@
 and the recovery store is never exposed by read endpoints."""
 
 import json
-import socket
 import threading
 import time
 
 import httpx
-import uvicorn
 
-from conftest import editing, wait_until, write
+from conftest import editing, free_port, start_server, stop_server, wait_until, write
 from viewer.app import create_app
 from viewer.config import Settings
-
-
-def _free_port():
-    with socket.socket() as s:
-        s.bind(("127.0.0.1", 0))
-        return s.getsockname()[1]
 
 
 def test_live_updates_once(root, data_dir):
     write(root / "doc.md", "zqalpha\n")
     write(root / "folder" / "inner.md", "zqinner\n")
-    port = _free_port()
+    port = free_port()
     app = create_app(Settings.make(str(root), port=port, reconcile_interval=1, ui_dir=str(root) + "-no-ui",
                                    allow_edit=True, data_dir=str(data_dir)))
-    server = uvicorn.Server(uvicorn.Config(app, host="127.0.0.1", port=port, log_level="warning",
-                                           timeout_graceful_shutdown=2))
-    th = threading.Thread(target=server.run, daemon=True)
-    th.start()
+    server, th = start_server(app, port)
     events: list[dict] = []
     stop = threading.Event()
     try:
@@ -122,8 +111,7 @@ def test_live_updates_once(root, data_dir):
         c.close()
     finally:
         stop.set()
-        server.should_exit = True
-        th.join(10)
+        stop_server(server, th)
     assert not th.is_alive()
 
 
