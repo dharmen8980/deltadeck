@@ -257,6 +257,7 @@ export function FileOpsProvider(props: FileOpsProviderProps) {
     () => ({
       config,
       rules,
+      tree,
       newFile: (dir) => setNameState({ mode: "newFile", dir, value: "untitled.md" }),
       newFolder: (dir) => setNameState({ mode: "newFolder", dir, value: "new-folder" }),
       upload: (dir, files) => {
@@ -315,7 +316,7 @@ export function FileOpsProvider(props: FileOpsProviderProps) {
       openHistory: (path) => setHistoryPath(path),
       openTrash: () => setTrashOpen(true),
     }),
-    [config, rules, doUpload, openPicker, doMove, doRemove, existing, repoPrefix, hasUnsaved],
+    [config, rules, tree, doUpload, openPicker, doMove, doRemove, existing, repoPrefix, hasUnsaved],
   );
 
   // ---------- name dialog ----------

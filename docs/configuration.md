@@ -126,6 +126,18 @@ files themselves when you search (a `.docx` from its cached conversion).
   place under the caps and do not count in `indexable_files`. Conversion
   failures are remembered across restarts, read errors (permissions) are
   tried again on the next start.
+- **Names for completion.** For code files the index also keeps their
+  identifiers: every definition (found by simple per-language patterns),
+  other names only when used at least twice in the file and not hash-like
+  or longer than 40 characters, at most 500 names per file (definitions
+  first, then the most used). Each distinct name is stored once, so this
+  stays a small part of the index (about 18 MB of 70 MB for 10,000 code
+  files). The editor's completion asks for them through
+  `/api/complete?prefix=&path=&limit=` (`{names: [{name, def, files}],
+  capped}`, at most 50; one query reads at most 20000 uses of a prefix plus
+  as many definitions, and `capped` says it stopped there).
+  Like the rest of the index it holds no text, and it is empty until the index
+  is built.
 - **Failed writes.** When a write fails (disk full, the database locked) the
   files indexed so far stay searchable and `limit_reason` says `disk` or
   `error`; a later file change tries again (at most once a minute).

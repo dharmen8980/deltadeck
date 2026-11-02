@@ -4,7 +4,14 @@
 // the read-only viewer bundle does not grow.
 
 import { useEffect, useImperativeHandle, useRef, type Ref } from "react";
-import { autocompletion, closeBrackets, closeBracketsKeymap, completionKeymap } from "@codemirror/autocomplete";
+import {
+  autocompletion,
+  closeBrackets,
+  closeBracketsKeymap,
+  closeCompletion,
+  completionKeymap,
+  completionStatus,
+} from "@codemirror/autocomplete";
 import { defaultKeymap, history, historyKeymap, indentWithTab } from "@codemirror/commands";
 import { css } from "@codemirror/lang-css";
 import { html } from "@codemirror/lang-html";
@@ -55,10 +62,12 @@ import {
   rectangularSelection,
 } from "@codemirror/view";
 import { tags as t } from "@lezer/highlight";
+import type { TreeResponse } from "@/lib/api";
 import type { EditorLang } from "@/lib/editor-lang";
 import { findKeyAction, isMacPlatform, menuEchoFilter } from "@/lib/find/keys";
 import { FIND_EVENT, type FindAction } from "@/lib/find/registry";
 import { isTypingTarget } from "@/lib/keys";
+import { completionSources, type CompleteEnv } from "./completions";
 
 function langExtension(lang: EditorLang): Extension {
   switch (lang) {
@@ -276,6 +285,9 @@ export interface CodeEditorProps {
   dark: boolean;
   wrap: boolean;
   label: string;
+  /** the file being edited (root-relative) and the folder's tree, for completions */
+  path?: string;
+  tree?: TreeResponse | null;
   onDocChange?: () => void;
   onSave?: () => void;
   /** Escape outside the search panel; return true when handled */
@@ -295,6 +307,8 @@ export default function CodeEditor({
   dark,
   wrap,
   label,
+  path,
+  tree,
   onDocChange,
   onSave,
   onEscape,
@@ -306,10 +320,11 @@ export default function CodeEditor({
   const hostRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
   const comps = useRef({ lang: new Compartment(), theme: new Compartment(), wrap: new Compartment() });
-  const cb = useRef({ onDocChange, onSave, onEscape, onFiles, onScrollFraction, onReady });
+  const cb = useRef({ onDocChange, onSave, onEscape, onFiles, onScrollFraction, onReady, path, tree });
   useEffect(() => {
-    cb.current = { onDocChange, onSave, onEscape, onFiles, onScrollFraction, onReady };
+    cb.current = { onDocChange, onSave, onEscape, onFiles, onScrollFraction, onReady, path, tree };
   });
+  const env = useRef<CompleteEnv>({ path: () => cb.current.path ?? "", tree: () => cb.current.tree ?? null });
   const initial = useRef({ initialText, crlf, lang, dark, wrap, label });
 
   useEffect(() => {
@@ -333,7 +348,8 @@ export default function CodeEditor({
         indentOnInput(),
         bracketMatching(),
         closeBrackets(),
-        autocompletion({ activateOnTyping: false }),
+        // pops up while typing; the sources decide when (completions.ts)
+        autocompletion(),
         rectangularSelection(),
         crosshairCursor(),
         highlightActiveLine(),
@@ -353,6 +369,7 @@ export default function CodeEditor({
             {
               key: "Escape",
               run: (view) => {
+                if (completionStatus(view.state) && closeCompletion(view)) return true;
                 if (searchPanelOpen(view.state)) {
                   closeSearchPanel(view);
                   return true;
@@ -372,7 +389,7 @@ export default function CodeEditor({
           indentWithTab,
         ]),
         EditorView.contentAttributes.of({ "aria-label": init.label }),
-        c.lang.of(langExtension(init.lang)),
+        c.lang.of([langExtension(init.lang), completionSources(init.lang, env.current)]),
         c.theme.of(themeExtension(init.dark)),
         c.wrap.of(init.wrap ? EditorView.lineWrapping : []),
         EditorView.updateListener.of((u) => {
@@ -451,7 +468,7 @@ export default function CodeEditor({
   }, []);
 
   useEffect(() => {
-    viewRef.current?.dispatch({ effects: comps.current.lang.reconfigure(langExtension(lang)) });
+    viewRef.current?.dispatch({ effects: comps.current.lang.reconfigure([langExtension(lang), completionSources(lang, env.current)]) });
   }, [lang]);
   useEffect(() => {
     viewRef.current?.dispatch({ effects: comps.current.theme.reconfigure(themeExtension(dark)) });

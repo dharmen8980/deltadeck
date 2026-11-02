@@ -176,7 +176,8 @@ export function EditorPane({ path, file, onDirtyChange, onExit, onOpenHistory, o
   const missingRef = useRef(false);
   const dirtyRef = useRef(false);
   const pathRef = useRef(path);
-  const maxBytes = editMaxBytes(useEditOps()?.config);
+  const editOps = useEditOps();
+  const maxBytes = editMaxBytes(editOps?.config);
   const maxBytesRef = useRef(maxBytes);
   const liveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
@@ -741,6 +742,8 @@ export function EditorPane({ path, file, onDirtyChange, onExit, onOpenHistory, o
                 dark={dark}
                 wrap={wrap}
                 label={`Editing ${path}`}
+                path={path}
+                tree={editOps?.tree}
                 onDocChange={onDocChange}
                 onSave={() => void doSave(false)}
                 onEscape={() => {

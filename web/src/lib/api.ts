@@ -1,6 +1,8 @@
 // Typed client for the local FastAPI backend. Every request is a relative
 // same-origin `/api/...` URL; nothing in here ever talks to another host.
 
+import type { ProjectNames } from "@/lib/complete";
+
 export type FileKind =
   | "markdown"
   | "mermaid"
@@ -379,6 +381,9 @@ export const api = {
       })}`,
       signal,
     ),
+  /** names from the search index starting with `prefix`; `path` (the open file) only ranks them */
+  complete: (params: { prefix: string; path?: string; limit?: number }, signal?: AbortSignal) =>
+    getJson<ProjectNames>(`/api/complete${qs({ prefix: params.prefix, path: params.path || undefined, limit: params.limit })}`, signal),
 };
 
 export function errorMessage(e: unknown): string {

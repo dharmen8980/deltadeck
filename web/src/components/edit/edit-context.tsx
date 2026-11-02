@@ -1,13 +1,15 @@
 "use client";
 
 import { createContext, useContext } from "react";
-import type { AppConfig } from "@/lib/api";
+import type { AppConfig, TreeResponse } from "@/lib/api";
 import type { NameRules } from "@/lib/edit-api";
 
 /** File-management actions; the context value is null when editing is disabled. */
 export interface EditOps {
   config: AppConfig;
   rules: NameRules;
+  /** the loaded file tree (link completion in the editor) */
+  tree: TreeResponse | null;
   newFile: (dir: string) => void;
   newFolder: (dir: string) => void;
   /** Upload `files` into `dir`, or open the file picker when no files are given. */

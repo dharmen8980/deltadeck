@@ -30,6 +30,20 @@ What you can do in the browser:
   finishes); **Esc** anywhere in the editor view (editor, toolbar, banners;
   not while a menu, dialog or the find panel is open) or **Done** leaves the
   editor.
+- **Completion** pops up while you type code (2 or more letters, not inside
+  comments or strings; **Ctrl-Space** asks for it anywhere, **Enter**
+  takes the selected entry, **Esc** closes the list). It offers the
+  language's own suggestions where CodeMirror has them (scope names and
+  keywords for JavaScript/TypeScript and Python, CSS properties, HTML tags),
+  words of the document, and names from the whole folder's
+  [search index](configuration.md#search-index) (marked `def` when the name is
+  defined there; definitions, the same language and nearby folders first).
+  In markdown and plain text, words come only with Ctrl-Space, so Enter at
+  the end of a sentence stays a new line. In markdown, typing `](` lists
+  files of the folder as relative links (markdown first, nearest first; a
+  leading `/` lists root-relative ones; not inside code, nor once a URL
+  scheme like `https:` is typed), and `](#` or `](other.md#` lists
+  the heading anchors of this or that document, as the preview names them.
 - **Unsaved changes** show as a dot in the header and a `●` in the tab title.
   Closing the tab warns; tree clicks, search jumps, links and Back/Forward ask
   *Save / Discard / Cancel*.

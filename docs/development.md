@@ -169,7 +169,7 @@ restart), changes under a cap applied without a full re-plan (and the result
 matching `plan_selection`), re-plans running throttled on their own thread,
 a failed write retried by a later change, the old-SQLite tombstone rebuild by
 dead bytes in the background, a hit whose file changed on disk before the
-watcher saw it, and a `.lock` file unlinked between open and flock. `test_git.py` (skipped when git is missing) builds real temporary
+watcher saw it, and a `.lock` file unlinked between open and flock. `test_complete.py` covers completion names: per-language extraction and the per-file cap, the names rows following inserts / updates / renames / deletes (and the tombstone rebuild), an old-schema index being rebuilt (and names cleared on a reset), and `/api/complete` ranking (extensionless files, literal `_` / `%`), the per-query scan cap and validation. `test_git.py` (skipped when git is missing) builds real temporary
 repositories: status with M/A/D/R/?? and line counts, denied and ignored names
 hidden, a root in a subfolder of the repository, the last commit's version
 (unchanged, new, deleted, renamed, binary), a denied file in history, a rename

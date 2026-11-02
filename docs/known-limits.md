@@ -67,6 +67,13 @@
   files and password-protected documents are refused; very long documents are
   cut at 2 MB of markdown. They are view-only, even with `--allow-edit`. See
   [Word documents](docx.md).
+- Editor completion is name-based, not type-aware: it does not know which
+  names are in scope or which members an object has, only words of the
+  document and identifiers found in the folder's code files by simple
+  patterns. Project names need the search index (none while it is disabled,
+  only the files indexed so far while it builds) and follow saves once the
+  file is reindexed. Heading anchors for another document come from its
+  markdown source, so anchors that only exist in raw HTML are not offered.
 - Find in the file (see [Find in the file](find.md)):
   - At most 5000 matches are counted and highlighted ("5,000+"). Large files
     are searched in their first 32 MB, and with the bar open each live change to

@@ -31,10 +31,11 @@ from .http_common import (  # noqa: F401 - prefixes and path tests re-exported f
     is_seen_path,
     same_site_request,
 )
+from .names import NAME_MAX
 from .paths import PathGuard
 from .pdf import PdfRenderer
 from .reconcile import Reconciler, backstop_intervals, watch_loop
-from .search import INDEX_DIR, SearchIndex
+from .search import INDEX_DIR, MAX_COMPLETE, SearchIndex
 from .store import Change, Store
 
 log = logging.getLogger("viewer")
@@ -264,6 +265,16 @@ def create_app(settings: Settings) -> FastAPI:
     @get("/api/search")
     def api_search(q: str = "", folder: str = "", types: str = "", limit: int = 50):
         return index.search(q, folder=folder, types=types, limit=limit)
+
+    @get("/api/complete")
+    def api_complete(prefix: str = "", path: str = "", limit: int = MAX_COMPLETE):
+        """Project-wide identifiers for editor completion, from the search index:
+        {"names": [{name, def, files}], "capped": bool}."""
+        if not 1 <= len(prefix) <= NAME_MAX:
+            return JSONResponse({"detail": f"prefix must be 1 to {NAME_MAX} characters"}, status_code=400)
+        if not 1 <= limit <= MAX_COMPLETE:
+            return JSONResponse({"detail": f"limit must be 1 to {MAX_COMPLETE}"}, status_code=400)
+        return index.complete(prefix, path=path, limit=limit)
 
     register_event_routes(app, store, closing)
 

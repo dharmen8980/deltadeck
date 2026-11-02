@@ -5,6 +5,8 @@ highlights are made at query time by reading the few files returned (a .docx thr
 markdown conversion). It lives in <data_dir>/search/<root key>.sqlite3 and survives restarts:
 on start only files whose (size, mtime) changed are read again. Totals are capped (files and
 bytes); over a cap the files that get indexed are chosen deterministically (`selection_key`).
+Code files also leave their identifiers (viewer.names) in the `words` / `uses` / `file_words`
+tables, for editor completion (`complete`).
 
 Where the database goes (`SearchIndex(index_dir=...)`): the data dir unless it overlaps the root
 (the caller passes None then), else - or when that file is unusable or held by another viewer
@@ -28,7 +30,8 @@ import unicodedata
 
 from .config import DEFAULT_SEARCH_MAX_FILES, DEFAULT_SEARCH_MAX_TOTAL_MB, path_within, root_key
 from .docx import DOCX_MAX, DocxError, convert_cached
-from .paths import PathError
+from .names import NAME_MAX, extract, family_exts
+from .paths import PathError, check_rel, ext_of
 from .store import Entry, Store
 
 log = logging.getLogger("viewer.search")
@@ -37,11 +40,13 @@ INDEXED_KINDS = {"markdown", "mermaid", "code", "json", "csv", "text", "docx"}
 MAX_FILES = 50
 MAX_NAMES = 20
 MAX_LINES = 5
+MAX_COMPLETE = 50
+COMPLETE_SCAN = 20000  # uses rows read per completion query at most (a 1-2 letter prefix)
 LINE_CHARS = 300
 _SUBTOKEN = re.compile(r"[^\W_]+", re.UNICODE)
 
 INDEX_DIR = "search"  # <data_dir>/search/<root key>.sqlite3 (+ -wal, -shm, .lock)
-SCHEMA_VERSION = "2"
+SCHEMA_VERSION = "5"  # 5: names for editor completion (words/uses/file_words)
 TOKENIZE = "unicode61 remove_diacritics 2"
 # files indexed in all, and the bytes of those files in all (a .docx counts its file size)
 DEFAULT_MAX_FILES, DEFAULT_MAX_TOTAL_MB = DEFAULT_SEARCH_MAX_FILES, DEFAULT_SEARCH_MAX_TOTAL_MB
@@ -368,6 +373,31 @@ def sweep_temp(tmp: str) -> list[str]:
 _NO_TIME = object()  # SearchIndex._snippet_text: no time left to convert a .docx
 
 
+def _pack(keys) -> bytes:
+    """Distinct non-negative ints, sorted and delta-coded as varints (about 2 bytes each)."""
+    out, prev = bytearray(), 0
+    for k in sorted(keys):
+        d, prev = k - prev, k
+        while d > 0x7F:
+            out.append(d & 0x7F | 0x80)
+            d >>= 7
+        out.append(d)
+    return bytes(out)
+
+
+def _unpack(data: bytes) -> list[int]:
+    keys, cur, d, shift = [], 0, 0, 0
+    for b in data:
+        d |= (b & 0x7F) << shift
+        if b & 0x80:
+            shift += 7
+        else:
+            cur += d
+            keys.append(cur)
+            d = shift = 0
+    return keys
+
+
 class _Stale(Exception):
     """The database is unusable (corrupt, foreign, old schema): delete and rebuild."""
 
@@ -503,6 +533,9 @@ class SearchIndex:
                     have = dict(db.execute("SELECT key, value FROM info").fetchall())
                     db.execute("SELECT id, path, size, mtime_ns, ext FROM files LIMIT 1").fetchall()
                     db.execute("SELECT rowid FROM docs LIMIT 1").fetchall()
+                    db.execute("SELECT id, name FROM words LIMIT 1").fetchall()
+                    db.execute("SELECT word_id, def, file_id, n FROM uses LIMIT 1").fetchall()
+                    db.execute("SELECT file_id, ids FROM file_words LIMIT 1").fetchall()
                     failed = db.execute("SELECT path, size, mtime_ns FROM skipped").fetchall()
                 except sqlite3.DatabaseError as e:
                     raise _Stale(str(e)) from None
@@ -520,6 +553,16 @@ class SearchIndex:
                     " size INTEGER NOT NULL, mtime_ns INTEGER NOT NULL, ext TEXT NOT NULL);"
                     "CREATE TABLE skipped (path TEXT PRIMARY KEY, size INTEGER NOT NULL, mtime_ns INTEGER NOT NULL);"
                     f"CREATE VIRTUAL TABLE docs USING fts5(body, content=''{opts}, tokenize='{TOKENIZE}');"
+                    # identifiers of code files (viewer.names), for editor completion. Each
+                    # distinct name once (prefix lookups in any case: NOCASE, identifiers are
+                    # ASCII), its uses keyed by (name, definition or not, file) so definitions
+                    # are read first, and per file the packed list of its use keys (_pack) so
+                    # removing a file seeks its rows instead of keeping a second index
+                    "CREATE TABLE words (id INTEGER PRIMARY KEY, name TEXT NOT NULL COLLATE NOCASE);"
+                    "CREATE INDEX words_name ON words(name);"
+                    "CREATE TABLE uses (word_id INTEGER NOT NULL, def INTEGER NOT NULL, file_id INTEGER NOT NULL,"
+                    " n INTEGER NOT NULL, PRIMARY KEY (word_id, def, file_id)) WITHOUT ROWID;"
+                    "CREATE TABLE file_words (file_id INTEGER PRIMARY KEY, ids BLOB NOT NULL);"
                     "COMMIT;")
                 db.executemany("INSERT INTO info VALUES (?, ?)",
                                list(want.items()) + [("dead", "0"), ("dead_bytes", "0")])
@@ -662,6 +705,7 @@ class SearchIndex:
     def _delete_row(self, row) -> None:
         db = self._begin()
         db.execute("DELETE FROM files WHERE id = ?", (row[0],))
+        self._delete_names(db, row[0])
         if self.delete_mode:
             db.execute("DELETE FROM docs WHERE rowid = ?", (row[0],))
         else:
@@ -674,6 +718,29 @@ class SearchIndex:
         self._count -= 1
         self._bytes -= row[1]
         self._pending += 1
+
+    @staticmethod
+    def _insert_names(db, file_id: int, names) -> None:
+        keys = []
+        for name, isdef, _ in names:
+            r = db.execute("SELECT id FROM words WHERE name = ? AND name = ? COLLATE BINARY", (name, name)).fetchone()
+            keys.append((r[0] if r else db.execute("INSERT INTO words(name) VALUES (?)", (name,)).lastrowid) * 2 + isdef)
+        db.executemany("INSERT INTO uses VALUES (?, ?, ?, ?)",
+                       ((k >> 1, k & 1, file_id, n) for k, (*_, n) in zip(keys, names)))
+        db.execute("INSERT INTO file_words VALUES (?, ?)", (file_id, _pack(keys)))
+
+    @staticmethod
+    def _delete_names(db, file_id: int) -> None:
+        r = db.execute("SELECT ids FROM file_words WHERE file_id = ?", (file_id,)).fetchone()
+        if r is None:
+            return
+        keys = _unpack(r[0])
+        db.executemany("DELETE FROM uses WHERE word_id = ? AND def = ? AND file_id = ?",
+                       ((k >> 1, k & 1, file_id) for k in keys))
+        # names no other file uses go too
+        db.executemany("DELETE FROM words WHERE id = ?1 AND NOT EXISTS (SELECT 1 FROM uses WHERE word_id = ?1)",
+                       ((w,) for w in {k >> 1 for k in keys}))
+        db.execute("DELETE FROM file_words WHERE file_id = ?", (file_id,))
 
     def _is_failed(self, e: Entry) -> bool:
         f = self._failed.get(e.path)
@@ -708,7 +775,8 @@ class SearchIndex:
             self.commit()
             db = self._db
             db.executescript(
-                "BEGIN; DROP TABLE docs; DELETE FROM files;"
+                "BEGIN; DROP TABLE docs; DELETE FROM files; DELETE FROM words; DELETE FROM uses;"
+                "DELETE FROM file_words;"
                 f"CREATE VIRTUAL TABLE docs USING fts5(body, content='', tokenize='{TOKENIZE}');"
                 "UPDATE info SET value = '0' WHERE key IN ('dead', 'dead_bytes'); COMMIT;")
             self._dead = self._dead_bytes = self._count = self._bytes = 0
@@ -750,6 +818,8 @@ class SearchIndex:
         if self._is_failed(e) or (cur is None and self._disk_full):
             return
         body, lasting = self._read(e)
+        # code files: their identifiers, for completion (outside the lock: a regex pass over the text)
+        names = extract(body, e.ext) if body is not None and e.kind == "code" else ()
         with self._lock:
             if self._stopped.is_set() or self._db is None:
                 return
@@ -774,6 +844,8 @@ class SearchIndex:
                         c = db.execute("INSERT INTO files(path, size, mtime_ns, ext) VALUES (?, ?, ?, ?)",
                                        (e.path, e.size, e.mtime_ns, e.ext))
                         db.execute("INSERT INTO docs(rowid, body) VALUES (?, ?)", (c.lastrowid, body))
+                        if names:
+                            self._insert_names(db, c.lastrowid, names)
                         self._count += 1
                         self._bytes += e.size
                         self._pending += 1
@@ -1155,3 +1227,54 @@ class SearchIndex:
             if stale and not count:
                 return None
         return {"path": path, "kind": e.kind, "score": -score, "matches": matches, "match_count": count}
+
+    def complete(self, prefix: str, path: str = "", limit: int = MAX_COMPLETE) -> dict:
+        """Identifiers of the indexed code files that start with `prefix` (any case), for editor
+        completion: definitions first, then names used in files of the same language as `path`,
+        in its folder, in its top folder, then the most used. `path` only ranks (it is never read).
+        {"names": [{name, def, files}], "capped": the prefix has more rows than one query reads
+        (a longer prefix may find names left out here)}. Empty while there is no index yet, or
+        when the query fails."""
+        empty = {"names": [], "capped": False}
+        limit = max(1, min(int(limit or MAX_COMPLETE), MAX_COMPLETE))
+        lp = prefix.lower()
+        if not lp or len(lp) > NAME_MAX:
+            return empty
+        rel = check_rel(path, self.store.guard.rel_hidden) if path else None
+        exts, d, top = ["\0"], "\0", "\0"  # nothing matches the placeholders (not even ext '')
+        if rel is not None:
+            ext = ext_of(rel.rsplit("/", 1)[-1])
+            if ext:
+                exts = family_exts(ext)
+            if "/" in rel:
+                d, top = rel.rsplit("/", 1)[0] + "/", rel.split("/", 1)[0] + "/"
+        # prefix ranges, no table scan: the names in the prefix range (words_name), their
+        # definitions, then their other uses (the uses key), at most COMPLETE_SCAN rows each;
+        # the window sums say whether either hit its cap
+        sql = ("SELECT x.name, max(x.def), count(*), sum(x.n),"
+               f" max(f.ext IN ({','.join('?' * len(exts))})), max(substr(f.path, 1, ?) = ?),"
+               " max(substr(f.path, 1, ?) = ?),"
+               " sum(sum(x.def)) OVER (), sum(count(*) - sum(x.def)) OVER ()"
+               " FROM (SELECT * FROM (SELECT w.id, w.name, u.file_id, u.def, u.n FROM words w CROSS JOIN uses u"
+               "  ON u.word_id = w.id AND u.def = 1 WHERE w.name >= ? AND w.name < ? LIMIT ?)"
+               " UNION ALL SELECT * FROM (SELECT w.id, w.name, u.file_id, u.def, u.n FROM words w CROSS JOIN uses u"
+               "  ON u.word_id = w.id AND u.def = 0 WHERE w.name >= ? AND w.name < ? LIMIT ?)) x"
+               " JOIN files f ON f.id = x.file_id GROUP BY x.id"
+               " ORDER BY 2 DESC, 5 DESC, 6 DESC, 7 DESC, 4 DESC, length(x.name), x.name COLLATE BINARY LIMIT ?")
+        hi = lp + "\U0010ffff"
+        args = [*exts, len(d), d, len(top), top, lp, hi, COMPLETE_SCAN, lp, hi, COMPLETE_SCAN, limit]
+        gen = self._gen
+        try:
+            with self._lock:
+                if self._db is None:
+                    return empty
+                rows = self._db.execute(sql, args).fetchall()
+        except sqlite3.OperationalError:  # busy
+            return empty
+        except sqlite3.DatabaseError:
+            log.exception("search index broken; rebuilding")
+            self._broken(gen)
+            return empty
+        capped = bool(rows) and max(rows[0][7], rows[0][8]) >= COMPLETE_SCAN
+        return {"names": [{"name": n, "def": bool(isdef), "files": files} for n, isdef, files, *_ in rows],
+                "capped": capped}
