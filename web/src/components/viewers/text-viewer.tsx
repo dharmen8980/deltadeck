@@ -95,6 +95,7 @@ function RemovedLines({ run, index, cm }: { run: RemovedRun; index: number; cm: 
     <div
       className={cn(CHANGE_UI, "code-removed", atEnd && "code-removed-end", open && "is-open")}
       data-change-hunk={atEnd ? "" : undefined}
+      data-removed-before={atEnd ? "end" : run.beforeLine}
       title={cm.full ? undefined : label}
     >
       {cm.full ? (

@@ -108,11 +108,14 @@ export function ChangeBanner({
   kind,
   git,
   onMode,
+  actions,
 }: {
   state: FileChangeState;
   kind: FileKind;
   git?: GitCompareState;
   onMode?: (m: BannerMode) => void;
+  /** more buttons, before Show changes (the review basket's Add all) */
+  actions?: React.ReactNode;
 }) {
   const { baseViewedAt, baseText, currentText, lineDiff, markdownDiff, showDiff, setShowDiff, markSeen } = state;
   const canDiff = baseText !== null && currentText !== null && lineDiff !== null && !git?.isDeleted;
@@ -224,6 +227,7 @@ export function ChangeBanner({
             </Button>
           </>
         ) : null}
+        {actions}
         {canDiff ? (
           <Button
             size="xs"

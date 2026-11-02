@@ -58,6 +58,7 @@ import { dirname, viewerHref } from "@/lib/paths";
 import { useEditOps } from "@/components/edit/edit-context";
 import { PdfMenu } from "@/components/pdf-menu";
 import type { EventsStatus } from "@/hooks/use-events";
+import { BasketMenu } from "@/components/review/basket-menu";
 import { copyText } from "@/lib/clipboard";
 import { setReadingWidth, useReadingWidth } from "@/lib/layout-prefs";
 import { READING_LABELS, READING_WIDTHS, parseReadingWidth } from "@/lib/panel-size";
@@ -344,6 +345,7 @@ export function FileHeader({
       </div>
 
       <div className="flex shrink-0 items-center gap-0.5">
+        <BasketMenu />
         {editEnabled ? (
           <Badge
             variant="outline"

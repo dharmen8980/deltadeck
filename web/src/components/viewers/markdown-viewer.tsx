@@ -40,9 +40,11 @@ function hastText(node: HastLike | undefined): string {
 }
 
 /** "Changed since viewed" attribute of a top-level block (see lib/rehype-change-marks.ts). */
-function changeAttrs(node: HastLike | undefined): { "data-change": string } | null {
+function changeAttrs(node: HastLike | undefined): { "data-change": string; "data-change-lines"?: string } | null {
   const change = node?.properties?.dataChange;
-  return change == null ? null : { "data-change": String(change) };
+  if (change == null) return null;
+  const lines = node?.properties?.dataChangeLines;
+  return { "data-change": String(change), ...(lines == null ? {} : { "data-change-lines": String(lines) }) };
 }
 
 function codeLang(node: HastLike | undefined): string {

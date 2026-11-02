@@ -139,6 +139,8 @@ export function applyCodeMarks(root: HTMLElement, marks: LineMarks, full: boolea
   marks.removed.forEach((run, i) => {
     const marker = removedMarker(run, full);
     marker.dataset.run = String(i);
+    // Which change it shows (the review basket finds the hunk by it).
+    marker.dataset.removedBefore = run.beforeLine === null ? "end" : String(run.beforeLine);
     if (run.beforeLine === null) {
       marker.setAttribute("data-change-hunk", "");
       // After the last line of the text (Shiki adds an empty one after a final newline).

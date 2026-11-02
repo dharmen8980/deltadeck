@@ -18,6 +18,9 @@ import {
 import { Button } from "@/components/ui/button";
 import { ChangeBanner, ChangesDiff, type BannerMode } from "@/components/changes/change-banner";
 import { ChangesContext, FileChangeContext, useFileChanges } from "@/components/changes/changes-context";
+import { BasketProvider, useFileReview } from "@/components/review/basket-context";
+import { BasketAddAll } from "@/components/review/basket-menu";
+import { BasketTargets } from "@/components/review/basket-targets";
 import { hasDrag, ownMoves, useEditOps } from "@/components/edit/edit-context";
 import type { EditorPaneHandle } from "@/components/edit/editor-pane";
 import { FileOpsProvider } from "@/components/edit/file-ops";
@@ -125,6 +128,9 @@ function FileView({
     (m: BannerMode) => setGitView?.(m === "git" ? { path, mode: "compare" } : null),
     [setGitView, path],
   );
+  // The review basket: the changes on screen (the git comparison's while it is shown, none under blame).
+  const review = useFileReview(file && !deleted ? file : null, mode === "blame" ? null : (gfc ?? fc));
+  const addAll = review && file ? <BasketAddAll review={review} path={file.path} /> : null;
   if (deletedInGit && gfc) {
     return (
       <FileChangeContext.Provider value={gfc}>
@@ -169,16 +175,16 @@ function FileView({
   return (
     <FileChangeContext.Provider value={shown}>
       {gfc && !blame ? (
-        <ChangeBanner state={gfc} git={gfc} kind={file.kind} onMode={fc?.changed ? onMode : undefined} />
+        <ChangeBanner state={gfc} git={gfc} kind={file.kind} onMode={fc?.changed ? onMode : undefined} actions={addAll} />
       ) : fc?.changed && !blame ? (
-        <ChangeBanner state={fc} kind={file.kind} onMode={git ? onMode : undefined} />
+        <ChangeBanner state={fc} kind={file.kind} onMode={git ? onMode : undefined} actions={addAll} />
       ) : null}
       {blame ? <BlameView path={file.path} version={version} onClose={closeGit} /> : null}
       {shown && diffing ? <ChangesDiff state={shown} git={gfc ?? undefined} /> : null}
       {/* Stays mounted under the diff: scroll position and rendered diagrams survive the toggle. */}
-      <div hidden={diffing || blame}>
+      <BasketTargets review={review} hidden={diffing || blame}>
         <Viewer key={file.path} file={file} reloadKey={reloadKey} />
-      </div>
+      </BasketTargets>
     </FileChangeContext.Provider>
   );
 }
@@ -829,7 +835,9 @@ export function AppShell() {
   if (loaded.config?.no_root) return <NoRootView switchEnabled={loaded.config.root_switch_enabled ?? false} />;
   return (
     <LayoutProvider>
-      <Shell initialConfig={loaded.config} />
+      <BasketProvider pathPrefix={loaded.config?.repo_prefix ?? ""}>
+        <Shell initialConfig={loaded.config} />
+      </BasketProvider>
     </LayoutProvider>
   );
 }

@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
-import { ArrowLeftIcon, CheckCheckIcon, CheckIcon, SparklesIcon } from "lucide-react";
+import { ArrowLeftIcon, CheckCheckIcon, CheckIcon, ListPlusIcon, SparklesIcon } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import {
@@ -14,11 +14,12 @@ import {
 } from "@/components/ui/sidebar";
 import { Skeleton } from "@/components/ui/skeleton";
 import { FileKindIcon } from "@/components/file-icon";
+import { addWithToast, basketKind, itemsFor, reviewHunksOf, symbolsOf, useBasket } from "@/components/review/basket-context";
 import type { ChangeTracker } from "@/hooks/use-change-tracker";
 import { api, ApiError, type FileKind, type TreeResponse } from "@/lib/api";
 import { hasLineMarks, isMarkdownText, isTracked, trackedMax } from "@/lib/change-rules";
 import { diffVersions, summarizeChange, type ChangeSummary } from "@/lib/diff";
-import { formatRelative } from "@/lib/format";
+import { formatRelative, plural } from "@/lib/format";
 import { viewerHref } from "@/lib/paths";
 import { cn } from "@/lib/utils";
 import {
@@ -61,6 +62,8 @@ export interface FeedSource {
   /** per-row action; absent when the mode has none */
   markSeen?(paths: string[]): void;
   markAllSeen?(): void;
+  /** puts the row's changes in the review basket (kinds it supports); absent when the mode has none */
+  addToBasket?(item: FeedItem): void;
 }
 
 /** Summaries computed at once (each is a content fetch, a snapshot fetch and a diff). */
@@ -139,6 +142,34 @@ export function useChangesSource(tree: TreeResponse | null, tracker: ChangeTrack
   }, []);
   const markAllSeen = useCallback(() => markSeen(items.map((i) => i.path)), [markSeen, items]);
 
+  // The review basket: the row's changes as the banner would show them (the full diff budget).
+  const basket = useBasket();
+  const basketRef = useRef(basket);
+  useEffect(() => {
+    basketRef.current = basket;
+  });
+  const hasBasket = Boolean(basket);
+  const addToBasket = useCallback(async (item: FeedItem) => {
+    const t = latest.current;
+    if (!t || !basketRef.current || !basketKind(item.kind)) return;
+    try {
+      const [snap, cur] = await Promise.all([t.getSnapshot(item.path), api.trackedText(item.path, item.kind)]);
+      if (snap?.text == null) {
+        toast("No earlier copy saved to compare", { description: item.path });
+        return;
+      }
+      const d = diffVersions(snap.text, cur, isMarkdownText(item.kind));
+      const hunks = reviewHunksOf(item.kind, d);
+      const ext = item.name.includes(".") ? item.name.slice(item.name.lastIndexOf(".") + 1) : "";
+      const symbols = item.kind === "code" && hunks.length ? await symbolsOf({ ...item, ext }, cur) : null;
+      const b = basketRef.current;
+      if (!b) return;
+      addWithToast(b, itemsFor(item, hunks, d.markdownDiff, symbols, cur), `${plural(hunks.length, "change")} in ${item.name}`);
+    } catch {
+      toast.error("Could not read the changes", { description: item.path });
+    }
+  }, []);
+
   return useMemo<FeedSource | null>(
     () =>
       tracker
@@ -152,9 +183,10 @@ export function useChangesSource(tree: TreeResponse | null, tracker: ChangeTrack
             loadSummary,
             markSeen,
             markAllSeen,
+            addToBasket: hasBasket ? (i: FeedItem) => void addToBasket(i) : undefined,
           }
         : null,
-    [tracker, tree, items, loader, loadSummary, markSeen, markAllSeen],
+    [tracker, tree, items, loader, loadSummary, markSeen, markAllSeen, hasBasket, addToBasket],
   );
 }
 
@@ -212,6 +244,7 @@ function FeedRow({
   activeClassName,
   onOpen,
   onMarkSeen,
+  onAddToBasket,
   observe,
 }: {
   item: FeedItem;
@@ -221,6 +254,7 @@ function FeedRow({
   activeClassName?: string;
   onOpen: (path: string) => void;
   onMarkSeen?: (path: string) => void;
+  onAddToBasket?: (item: FeedItem) => void;
   observe: (el: HTMLElement | null) => (() => void) | undefined;
 }) {
   const when = item.mtime ? formatRelative(item.mtime) : null;
@@ -230,7 +264,7 @@ function FeedRow({
         asChild
         size="sm"
         isActive={active}
-        className={cn("h-auto items-start py-1.5", onMarkSeen && "pr-7", activeClassName)}
+        className={cn("h-auto items-start py-1.5", onAddToBasket ? "pr-13" : onMarkSeen && "pr-7", activeClassName)}
       >
         <a
           href={viewerHref(item.path)}
@@ -268,6 +302,17 @@ function FeedRow({
           title="Mark as seen"
         >
           <CheckIcon />
+        </SidebarMenuAction>
+      ) : null}
+      {onAddToBasket ? (
+        <SidebarMenuAction
+          showOnHover
+          className={cn("top-1.5", onMarkSeen && "right-7")}
+          onClick={() => onAddToBasket(item)}
+          aria-label={`Add the changes in ${item.name} to the review basket`}
+          title="Add all changes to the review basket"
+        >
+          <ListPlusIcon />
         </SidebarMenuAction>
       ) : null}
     </SidebarMenuItem>
@@ -380,6 +425,7 @@ export function WhatsNewPanel({
                 activeClassName={activeClassName}
                 onOpen={open}
                 onMarkSeen={markOne}
+                onAddToBasket={source.addToBasket && basketKind(item.kind) ? source.addToBasket : undefined}
                 observe={observe}
               />
             ))}

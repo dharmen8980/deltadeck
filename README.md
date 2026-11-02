@@ -88,6 +88,7 @@ uv run viewer --root ~/notes   # or start on a given folder
 | [Configuration](docs/configuration.md) | Flags and environment variables; choosing and switching folders; `/api/roots` |
 | [Editing](docs/editing.md) | `--allow-edit`, history, trash, the recovery data dir, backups, limits, how writes are protected |
 | [Changes](docs/changes.md) | "Changed since you last looked": dots, the filter, the What's new feed, the banner, highlights, where the history is kept |
+| [Review basket](docs/review.md) | Picking highlighted changes, a note each, and copying them as one prompt for an AI agent |
 | [Git](docs/git.md) | Read-only git views: since last commit, the Uncommitted list, blame; which git is used; `/api/git/*` |
 | [Find in the file](docs/find.md) | Cmd/Ctrl+F: shortcuts, what each viewer searches, the editor's search panel, limits |
 | [Code outline](docs/outline.md) | The symbols panel for source code: languages, what is listed, how and when it is computed, bundle size |
