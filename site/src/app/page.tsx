@@ -125,7 +125,7 @@ function Hero() {
   return (
     <section
       aria-labelledby="hero-title"
-      className="mx-auto max-w-6xl px-4 pt-16 pb-12 sm:px-6 sm:pt-24"
+      className="mx-auto max-w-6xl px-4 pt-8 pb-8 sm:px-6 sm:pt-12"
     >
       <Badge
         variant="outline"
