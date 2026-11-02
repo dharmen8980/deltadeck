@@ -2,6 +2,8 @@
 
 # DeltaDeck
 
+**[deltadeck.dev](https://deltadeck.dev)**
+
 Every change, stacked for review. DeltaDeck is a local-only viewer for one
 folder of documents and code. Editing and file
 management are on by default; `--read-only` turns them off

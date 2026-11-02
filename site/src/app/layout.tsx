@@ -3,11 +3,11 @@ import type { Metadata, Viewport } from "next";
 import { DESCRIPTION, TAGLINE } from "@/lib/site";
 import "./globals.css";
 
-// On Vercel, Next.js falls back to the production URL for absolute Open Graph links.
-const siteUrl = process.env.NEXT_PUBLIC_SITE_URL;
+// Absolute Open Graph links; NEXT_PUBLIC_SITE_URL overrides for another host.
+const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || "https://deltadeck.dev";
 
 export const metadata: Metadata = {
-  ...(siteUrl ? { metadataBase: new URL(siteUrl) } : {}),
+  metadataBase: new URL(siteUrl),
   title: `DeltaDeck: ${TAGLINE}`,
   description: DESCRIPTION,
   applicationName: "DeltaDeck",

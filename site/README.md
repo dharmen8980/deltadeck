@@ -28,9 +28,8 @@ npm run lint
 3. Framework preset: **Next.js**. Keep the default build command.
 4. No environment variables are needed.
 
-Vercel uses the production URL for the Open Graph links. On another host, set
-`NEXT_PUBLIC_SITE_URL` (for example `https://deltadeck.example.com`) at build
-time so they are absolute.
+Live at https://deltadeck.dev, which is also the base for the Open Graph links.
+On another host, set `NEXT_PUBLIC_SITE_URL` at build time.
 
 ## Layout
 
