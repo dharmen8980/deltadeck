@@ -15,10 +15,23 @@ import { loadWindowState, trackWindowState } from "./window-state";
 
 app.setName("DeltaDeck");
 // A throw-away profile for automated checks (e2e/smoke.mjs; packaged too). Absolute paths only.
-// Otherwise userData keeps the folder of the app's former name, Local Docs Viewer: settings,
-// remembered folders and the data dir stay where they were.
-const udd = process.env.LDV_USER_DATA_DIR;
-app.setPath("userData", udd && path.isAbsolute(udd) ? udd : path.join(app.getPath("appData"), "Local Docs Viewer"));
+const udd = process.env.DELTADECK_USER_DATA_DIR;
+app.setPath("userData", udd && path.isAbsolute(udd) ? udd : defaultUserData());
+
+/** appData/DeltaDeck. Once, the folder of the app's former name (appData/Local Docs Viewer) is
+ * moved there so settings, remembered folders and the data dir carry over; if that move fails,
+ * the old folder stays in use. */
+function defaultUserData(): string {
+  const dir = path.join(app.getPath("appData"), "DeltaDeck");
+  const legacy = path.join(app.getPath("appData"), "Local Docs Viewer");
+  if (fs.existsSync(dir) || !fs.existsSync(legacy)) return dir;
+  try {
+    fs.renameSync(legacy, dir);
+    return dir;
+  } catch {
+    return legacy;
+  }
+}
 hardenAppEarly();
 hardenWebContents();
 

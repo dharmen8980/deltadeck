@@ -15,7 +15,7 @@ def sha(b: bytes) -> str:
 
 
 def no_temp_files(root):
-    return not [n for _d, _ds, fs in os.walk(root) for n in fs if n.startswith(".ldv-tmp-")]
+    return not [n for _d, _ds, fs in os.walk(root) for n in fs if n.startswith(".deltadeck-tmp-")]
 
 
 @pytest.fixture
@@ -96,7 +96,7 @@ def test_atomic_write_failure_leaves_no_temp(tree, data_dir, monkeypatch):
         real_replace = os.replace
 
         def boom(src, dst, *a, **kw):
-            if os.path.basename(src).startswith(".ldv-tmp-"):
+            if os.path.basename(src).startswith(".deltadeck-tmp-"):
                 raise OSError(5, "simulated I/O error")
             return real_replace(src, dst, *a, **kw)
 

@@ -78,13 +78,24 @@ def test_custom_deny_and_no_default(root):
 
 
 def test_settings_from_args_and_env(root):
-    from viewer.config import settings_from_args
+    from deltadeck.config import settings_from_args
 
     s = settings_from_args(["--root", str(root), "--deny", "a*", "--ignore", "b*", "--port", "9000"],
-                           env={"DOCS_VIEWER_DENY": "c*, d*", "DOCS_VIEWER_IGNORE": "e*"})
+                           env={"DELTADECK_DENY": "c*, d*", "DELTADECK_IGNORE": "e*"})
     assert s.port == 9000 and s.root == os.path.realpath(root)
     assert {".env", "*token*", "a*", "c*", "d*"} <= set(s.deny)
     assert {"__pycache__", "b*", "e*"} <= set(s.ignore)
-    s = settings_from_args(["--no-default-deny"], env={"DOCS_VIEWER_ROOT": str(root), "DOCS_VIEWER_PORT": "9001",
-                                                       "DOCS_VIEWER_SEARCH_MAX_MB": "1"})
+    s = settings_from_args(["--no-default-deny"], env={"DELTADECK_ROOT": str(root), "DELTADECK_PORT": "9001",
+                                                       "DELTADECK_SEARCH_MAX_MB": "1"})
     assert s.deny == () and s.port == 9001 and s.search_max_bytes == 1024 * 1024
+
+
+def test_former_env_prefix_still_read(root):
+    """DOCS_VIEWER_* (the app's former name) is a fallback; DELTADECK_* wins when both are set."""
+    from deltadeck.config import settings_from_args
+
+    s = settings_from_args([], env={"DOCS_VIEWER_ROOT": str(root), "DOCS_VIEWER_PORT": "9002"})
+    assert s.root == os.path.realpath(root) and s.port == 9002
+    s = settings_from_args([], env={"DOCS_VIEWER_ROOT": str(root), "DOCS_VIEWER_PORT": "9002",
+                                    "DELTADECK_PORT": "9003"})
+    assert s.port == 9003

@@ -3,12 +3,15 @@
 - **Loopback only.** Uvicorn binds `127.0.0.1` and there is no host option.
   `TrustedHostMiddleware` accepts only `Host: 127.0.0.1` or `localhost`, which
   blocks DNS rebinding. There is no CORS.
-- **Read-only by default.** Only GET and HEAD routes exist; anything else
-  returns 405 (except the token-guarded `POST /api/roots/*`, see [The
+- **Writes only through `/api/edit/*`.** Every other route is GET or HEAD;
+  anything else returns 405 (except the token-guarded `POST /api/roots/*`, see [The
   /api/roots endpoints](configuration.md#the-apiroots-endpoints-and-their-security-model),
-  and `POST /api/seen/*`, see [below](#the-apiseen-endpoints)). Without `--allow-edit` the server never writes inside the root,
-  and `/api/edit/*` returns 403. With it, writes are limited to `/api/edit/*`
-  and protected as described in [How writes are protected](editing.md#how-writes-are-protected).
+  and `POST /api/seen/*`, see [below](#the-apiseen-endpoints)). Editing is on
+  by default; its writes are limited to `/api/edit/*` and protected (per-launch
+  edit token, same-site checks) as described in [How writes are protected](editing.md#how-writes-are-protected).
+  With `--read-only` (or in a folder that overlaps the data dir) the server
+  never writes inside the root and `/api/edit/*` returns 403; use it when
+  sharing the machine or viewing a folder you do not trust.
   The search index lives in the data dir (see [Search index](#search-index)).
   The git views run only read-only git commands, locked down as described
   [below](#git).
@@ -72,13 +75,13 @@
   `/api/docx`, `/api/pdf`, `/api/edit/*`, `/api/git/*`, `/api/seen/*` and
   search. They keep their 403. Denied files are never indexed and never get a
   seen history.
-- **`--no-reveal`** (`DOCS_VIEWER_NO_REVEAL=1`) turns this off: `reveal=1`
+- **`--no-reveal`** (`DELTADECK_NO_REVEAL=1`) turns this off: `reveal=1`
   gets 403, and denied names are left out of the hidden-files listing too.
   `/api/config` reports it as `reveal_enabled`.
 - **Listings.** `GET /api/tree?hidden=1` adds the topmost hidden items of
   visible folders. `GET /api/hidden?path=` lists the direct children of one
   hidden folder (at most 2000). Neither reads file contents. `.git`,
-  `.ldv-tmp-*`, the data dir and symlinked folders are never listed nor
+  `.deltadeck-tmp-*`, the data dir and symlinked folders are never listed nor
   served, whatever the mode.
 - **Ignored and git-ignored files** are readable by every read route without
   a flag. Ignore-list paths stay refused by `/api/edit/*`; git-ignored files

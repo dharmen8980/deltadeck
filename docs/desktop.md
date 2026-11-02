@@ -3,12 +3,14 @@
 The desktop app (Electron, in `desktop/`) bundles the UI and a frozen copy of
 this server (PyInstaller; no Python, uv or Chrome needed) and runs the server
 as a child process in desktop mode. Same viewer, same security model, in its
-own window; PDF export uses the app's built-in Chromium.
+own window; PDF export and printing use the app's built-in Chromium.
 
-**Download** from [Releases](https://github.com/dharmen8980/local-docs-viewer/releases):
-`local-docs-viewer-<version>-mac-arm64.dmg` (Apple Silicon), `-mac-x64.dmg`
+**Download** from [Releases](https://github.com/dharmen8980/deltadeck/releases):
+`deltadeck-<version>-mac-arm64.dmg` (Apple Silicon), `-mac-x64.dmg`
 (Intel), `-linux-x86_64.AppImage` or `-linux-amd64.deb`. `SHA256SUMS.txt`
 lists the checksums.
+
+> **Demo note:** this paragraph was added to show the change tracker in the desktop app.
 
 **First launch on macOS.** The app is not signed with an Apple Developer ID
 (it is ad-hoc signed, so it runs on Apple Silicon) and not notarized, so
@@ -18,14 +20,13 @@ later: try to open it once, then System Settings → Privacy & Security →
 **Open Anyway**), or remove the quarantine flag:
 
 ```sh
-xattr -dr com.apple.quarantine "/Applications/Local Docs Viewer.app"
+xattr -dr com.apple.quarantine "/Applications/DeltaDeck.app"
 ```
 
 **Using it.** File → **Open Folder…** (Cmd/Ctrl+O) picks a folder; the app
-reopens the last one on start. It is read-only by default: **Settings → Allow
-editing** (on Linux under File) turns on editing after a confirmation, is
-remembered, and restarts the server (unsaved editor changes are lost).
-Help → **Show Logs** / **Open Data Folder**.
+reopens the last one on start. Editing is on by default: **Settings → Allow
+editing** (on Linux under File) turns it off or back on (turning it on asks
+for a confirmation), is remembered, and restarts the server (unsaved editor changes are lost).
 
 **macOS folder access.** The folder you open is yours to read, but anything
 outside it in Desktop, Documents or Downloads needs the app's privacy
@@ -36,8 +37,10 @@ views appear after you allow it. An ad-hoc signed build is a new app to macOS
 each time it is rebuilt, so a locally built copy asks again after every build
 (System Settings → Privacy & Security → Files & Folders shows the grant).
 
-**Where things live** (`<userData>`): macOS `~/Library/Application Support/Local Docs Viewer`,
-Linux `~/.config/Local Docs Viewer`.
+**Where things live** (`<userData>`): macOS `~/Library/Application Support/DeltaDeck`,
+Linux `~/.config/DeltaDeck`. On first launch the folder of the app's former name
+(`Local Docs Viewer`) is moved there, so settings and remembered folders carry
+over; macOS asks for folder access once again.
 
 - `<userData>/data`: the server's data dir (`state.json` with recent folders
   and the last folder; `seen.sqlite3`, the [changes history](changes.md);
@@ -48,11 +51,11 @@ Linux `~/.config/Local Docs Viewer`.
   the window's origin, and the UI's saved preferences, stay the same);
   `window-state.json`: window size and position.
 
-**Linux.** AppImage: `chmod +x local-docs-viewer-*.AppImage` and run it; it
+**Linux.** AppImage: `chmod +x deltadeck-*.AppImage` and run it; it
 needs FUSE 2 (`sudo apt install libfuse2` on Ubuntu 22.04+, `libfuse2t64` on
 24.04+). On Ubuntu 24.04+ AppArmor blocks the unprivileged user namespaces
 Chromium's sandbox uses from an AppImage; prefer the `.deb`
-(`sudo apt install ./local-docs-viewer-*.deb`, which installs the setuid
+(`sudo apt install ./deltadeck-*.deb`, which installs the setuid
 sandbox helper) rather than turning the sandbox off. The app quits when its
 last window closes (macOS: it keeps running, as usual).
 
@@ -77,24 +80,24 @@ by `.github/workflows/desktop-release.yml` on `v*` tags (macOS arm64 and x64,
 Linux x64; tests and a packaged-app smoke test first; the release is created
 as a draft).
 
-Dev run: `cd desktop && npm start` (uses `uv run viewer` from this checkout
+Dev run: `cd desktop && npm start` (uses `uv run deltadeck` from this checkout
 and the current `web/out`). Checks: `npm test` (bridge request refusals) and
 `npm run e2e` (Playwright drives the dev app with a throw-away profile and a
 seeded folder: tree, open a file, PDF export, FTS5 search, clean quit);
 `npm run e2e:packaged` runs the same API checks against the packaged app,
 launched as-is (its fuses forbid the debugger hooks Playwright needs).
-`LDV_USER_DATA_DIR=/abs/path` points the app at another profile (tests).
+`DELTADECK_USER_DATA_DIR=/abs/path` points the app at another profile (tests).
 
 ## Desktop mode (the server side)
 
 Desktop mode is not meant to be started by hand; the app runs:
 
 ```sh
-viewer --desktop --port P --ui-dir <bundled web/out> --data-dir <userData>/data [--allow-edit]
-# env: DOCS_VIEWER_BRIDGE_URL=http://127.0.0.1:<bridge port>  DOCS_VIEWER_BRIDGE_TOKEN=<random>
+deltadeck --desktop --port P --ui-dir <bundled web/out> --data-dir <userData>/data [--read-only]
+# env: DELTADECK_BRIDGE_URL=http://127.0.0.1:<bridge port>  DELTADECK_BRIDGE_TOKEN=<random>
 ```
 
-What changes in desktop mode (`--desktop` or `DOCS_VIEWER_DESKTOP=1`):
+What changes in desktop mode (`--desktop` or `DELTADECK_DESKTOP=1`):
 
 - Both bridge variables are required (the server exits with an error
   otherwise). The bridge URL must be `http://127.0.0.1:<port>`.
@@ -105,7 +108,7 @@ What changes in desktop mode (`--desktop` or `DOCS_VIEWER_DESKTOP=1`):
   viewer's origin, so no system Chrome is needed. `playwright` is never
   imported. A dialog left open for 10 minutes counts as a cancel.
 - Once the server accepts connections it prints one line to stdout:
-  `LDV_READY http://127.0.0.1:P/`.
+  `DELTADECK_READY http://127.0.0.1:P/`.
 - The app keeps the server's stdin open. When stdin reaches EOF (the app quit
   or crashed) the server shuts down gracefully and exits for good after ~3s.
 - Everything else is unchanged: same loopback binding, Host/Origin checks,
@@ -113,6 +116,6 @@ What changes in desktop mode (`--desktop` or `DOCS_VIEWER_DESKTOP=1`):
   folders, last folder) lives in the data dir the app passes, so the app
   reopens the last folder.
 
-`python -m viewer` is equivalent to `uv run viewer` (and is the entry point of
-the packaged server binary). Plain `uv run viewer` works exactly as before,
+`python -m deltadeck` is equivalent to `uv run deltadeck` (and is the entry point of
+the packaged server binary). Plain `uv run deltadeck` works exactly as before,
 including Playwright PDF export.

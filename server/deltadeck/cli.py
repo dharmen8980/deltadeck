@@ -1,0 +1,111 @@
+"""Console entry point: `uv run deltadeck`."""
+
+from __future__ import annotations
+
+import logging
+import os
+import sys
+
+import uvicorn
+
+from .config import HOST, settings_from_args
+from .roots import RootSwitcher
+
+
+def self_check() -> None:
+    """Hidden `--self-check` (packaging): the frozen binary has the app, SQLite FTS5, mammoth (.docx),
+    the file watcher's native backend (watchfiles) and no playwright."""
+    import importlib.util
+    import io
+    import sqlite3
+    import zipfile
+
+    from . import app, desktop  # noqa: F401 - import errors are the check
+    from .docx import convert_docx
+    from .search import CONTENTLESS_DELETE, TOKENIZE
+
+    # store.py imports watchfiles lazily: check its native (FSEvents/inotify) extension made it into the bundle
+    from watchfiles import _rust_notify  # noqa: F401
+
+    # the search index's table: contentless FTS5, its tokenizer, and contentless_delete when SQLite has it
+    db = sqlite3.connect(":memory:")
+    opts = ", contentless_delete=1" if CONTENTLESS_DELETE else ""
+    db.execute(f"CREATE VIRTUAL TABLE t USING fts5(body, content=''{opts}, tokenize='{TOKENIZE}')")
+    db.execute("INSERT INTO t (rowid, body) VALUES (1, 'hello frozen café')")
+    assert db.execute("SELECT count(*) FROM t WHERE t MATCH 'frozen AND cafe'").fetchone()[0] == 1
+    if CONTENTLESS_DELETE:
+        db.execute("DELETE FROM t WHERE rowid = 1")
+        assert db.execute("SELECT count(*) FROM t WHERE t MATCH 'frozen'").fetchone()[0] == 0
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as z:
+        z.writestr("_rels/.rels", '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+                   '<Relationship Id="r1" Type="http://schemas.openxmlformats.org/officeDocument/2006/'
+                   'relationships/officeDocument" Target="word/document.xml"/></Relationships>')
+        z.writestr("word/document.xml", '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/'
+                   '2006/main"><w:body><w:p><w:r><w:t>frozen docx</w:t></w:r></w:p></w:body></w:document>')
+    assert convert_docx(buf.getvalue()).markdown == "frozen docx\n"
+    frozen = getattr(sys, "frozen", False)
+    if frozen and importlib.util.find_spec("playwright") is not None:
+        sys.exit("[deltadeck] self-check: playwright is bundled")
+    delete = "contentless_delete" if CONTENTLESS_DELETE else "no-contentless_delete"
+    print(f"DELTADECK_SELF_CHECK ok sqlite {sqlite3.sqlite_version} fts5 {delete} docx watchfiles"
+          f" python {sys.version.split()[0]}{' frozen' if frozen else ''}")
+
+
+def main(argv: list[str] | None = None) -> None:
+    if (sys.argv[1:] if argv is None else argv) == ["--self-check"]:
+        return self_check()
+    logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
+    settings = settings_from_args(argv)
+    if settings.desktop:
+        from .desktop import check_bridge
+
+        if err := check_bridge(settings.bridge_url, settings.bridge_token):
+            sys.exit(f"[deltadeck] {err}")
+    if settings.root is not None and not os.path.isdir(settings.root):
+        sys.exit(f"root folder not found: {settings.root}")
+    if settings.root is None and settings.lock_root:
+        sys.exit("[deltadeck] --lock-root needs a folder: pass --root PATH or set DELTADECK_ROOT")
+    if not os.path.isdir(settings.ui_dir):
+        print(f"[deltadeck] UI not built ({settings.ui_dir} missing). "
+              "Run 'npm run build' in web/ - serving the API only.", file=sys.stderr)
+    if settings.root is None:
+        print("[deltadeck] no folder selected — choose one in the browser", file=sys.stderr)
+    else:
+        src = {"state": " (last used)", "env": " (DELTADECK_ROOT)"}.get(settings.root_source, "")
+        print(f"[deltadeck] root: {settings.root}{src}", file=sys.stderr)
+    here = settings.editable()  # this root only; `settings` stays the base for folder switches
+    if here.edit_off_reason:
+        print(f"[deltadeck] read-only here: {here.edit_off_reason}", file=sys.stderr)
+    elif here.allow_edit:
+        where = settings.store_dir if settings.root else f"{settings.data_dir}/roots/<key>"
+        print(f"[deltadeck] editing on (--read-only to turn off); history/trash/audit in {where}", file=sys.stderr)
+    elif settings.root is not None and settings.data_dir_overlaps_root():
+        print(f"[deltadeck] note: data dir {settings.data_dir} overlaps the root; it is hidden from the viewer", file=sys.stderr)
+    if settings.lock_root:
+        print("[deltadeck] folder switching disabled (--lock-root)", file=sys.stderr)
+    if settings.desktop:
+        return _run_desktop(settings)
+    print(f"[deltadeck] open http://{HOST}:{settings.port}/", file=sys.stderr)
+    app = RootSwitcher(settings)
+    uvicorn.run(app, host=HOST, port=settings.port, log_level="info", lifespan="on",
+                proxy_headers=False, server_header=False, timeout_graceful_shutdown=3)
+
+
+def _run_desktop(settings) -> None:
+    """Child of the Electron shell: bridge picker + renderer, ready line on stdout, exit on stdin EOF."""
+    from .desktop import GRACEFUL_S, BridgeClient, bridge_picker, make_server, start_stdin_watchdog
+
+    print(f"[deltadeck] desktop mode; bridge {settings.bridge_url}", file=sys.stderr)
+    app = RootSwitcher(settings, picker=bridge_picker(BridgeClient(settings.bridge_url, settings.bridge_token)))
+    config = uvicorn.Config(app, host=HOST, port=settings.port, log_level="info", lifespan="on",
+                            proxy_headers=False, server_header=False, timeout_graceful_shutdown=GRACEFUL_S)
+    server = make_server(config, settings.port)
+    start_stdin_watchdog(server)
+    server.run()
+    if not server.started:
+        sys.exit("[deltadeck] server did not start (see the log above)")
+
+
+if __name__ == "__main__":
+    main()

@@ -8,8 +8,8 @@ import time
 import httpx
 
 from conftest import editing, free_port, start_server, stop_server, wait_until, write
-from viewer.app import create_app
-from viewer.config import Settings
+from deltadeck.app import create_app
+from deltadeck.config import Settings
 
 
 def test_live_updates_once(root, data_dir):
@@ -107,7 +107,7 @@ def test_live_updates_once(root, data_dir):
         assert all_added == ["folder2/up.md"], events
         assert all_deleted == ["folder2/inner.md"], events
         assert len(events) == 6, events
-        assert not any(".ldv-tmp" in json.dumps(e) for e in events)
+        assert not any(".deltadeck-tmp" in json.dumps(e) for e in events)
         c.close()
     finally:
         stop.set()

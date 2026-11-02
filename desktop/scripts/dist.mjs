@@ -20,10 +20,10 @@ const run = (cmd, args, cwd) => {
   execFileSync(cmd, args, { cwd, stdio: "inherit", env: { ...process.env, NEXT_TELEMETRY_DISABLED: "1" } });
 };
 
-if (!process.env.LDV_SKIP_WEB) {
+if (!process.env.DELTADECK_SKIP_WEB) {
   run(npm, ["ci"], web);
   run(npm, ["run", "build"], web);
 }
-if (!process.env.LDV_SKIP_SERVER) run("bash", [path.join(desktop, "scripts", "build-server.sh")], desktop);
+if (!process.env.DELTADECK_SKIP_SERVER) run("bash", [path.join(desktop, "scripts", "build-server.sh")], desktop);
 run(npm, ["run", "build"], desktop);
 run(path.join(desktop, "node_modules", ".bin", "electron-builder"), [`--${target}`, arch, ...rest], desktop);

@@ -115,5 +115,5 @@ export function activeFindSource(): FindSource | null {
 }
 
 /** Desktop menu (desktop/src/main.ts) -> page: `detail` is "open", "next" or "prev". */
-export const FIND_EVENT = "ldv:find";
+export const FIND_EVENT = "deltadeck:find";
 export type FindAction = "open" | "next" | "prev";

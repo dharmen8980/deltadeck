@@ -1,0 +1,96 @@
+# Python package (uvx deltadeck / pip install deltadeck): build the web UI, build the wheel
+# (UI inside as deltadeck/ui) and sdist, smoke-test the installed wheel, and on a v* tag publish
+# to PyPI with trusted publishing (no token; see docs/development.md "Releasing").
+# workflow_dispatch builds and tests without publishing.
+# Actions are pinned to commit SHAs (Dependabot keeps them current: .github/dependabot.yml).
+name: pypi-release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pypi-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 20
+    env:
+      NEXT_TELEMETRY_DISABLED: "1"
+      PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: "1"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # No dependency caches: a cache poisoned by another run must not reach the published package.
+      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+        with:
+          enable-cache: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+          package-manager-cache: false
+
+      - name: Tag matches the package version
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          v=$(sed -n 's/^version = "\(.*\)"/\1/p' pyproject.toml)
+          test "v$v" = "$GITHUB_REF_NAME" || { echo "tag $GITHUB_REF_NAME != pyproject version $v"; exit 1; }
+          p=$(sed -n 's/^__version__ = "\(.*\)"/\1/p' server/deltadeck/__init__.py)
+          test "$p" = "$v" || { echo "server/deltadeck/__init__.py version $p != pyproject version $v"; exit 1; }
+
+      - name: Build the web UI
+        working-directory: web
+        run: |
+          npm ci
+          npm run build
+
+      - name: Build wheel + sdist
+        run: uv build --out-dir dist
+
+      - name: Smoke test the installed wheel
+        run: |
+          uv venv --python 3.13 /tmp/x
+          VIRTUAL_ENV=/tmp/x uv pip install dist/*.whl
+          /tmp/x/bin/deltadeck --root "$GITHUB_WORKSPACE/docs" --port 8799 --data-dir /tmp/x-data &
+          pid=$!
+          for i in $(seq 1 30); do curl -sf http://127.0.0.1:8799/api/config >/dev/null && break; sleep 1; done
+          curl -sf -o /tmp/config.json http://127.0.0.1:8799/api/config
+          v=$(sed -n 's/^version = "\(.*\)"/\1/p' pyproject.toml)
+          python3 -c 'import json, sys; got = json.load(open("/tmp/config.json"))["version"]; sys.exit(0 if got == sys.argv[1] else f"/api/config version {got} != {sys.argv[1]}")' "$v"
+          curl -sf -o /tmp/index.html http://127.0.0.1:8799/
+          grep -qi "<html" /tmp/index.html
+          # The bundled UI's static assets are in the wheel and served.
+          js=$(grep -o '/_next/static/[^"]*\.js' /tmp/index.html | head -n 1)
+          test -n "$js" || { echo "no /_next/static script in index.html"; exit 1; }
+          curl -sf -o /dev/null "http://127.0.0.1:8799$js"
+          kill "$pid"
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: python-dist
+          if-no-files-found: error
+          retention-days: 14
+          path: dist/
+
+  publish:
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-22.04
+    environment:
+      name: pypi
+      url: https://pypi.org/project/deltadeck/
+    permissions:
+      id-token: write # trusted publishing
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: python-dist
+          path: dist
+      - uses: pypa/gh-action-pypi-publish@7245906fb61fa33a13554f9d5fb856fe61758086 # v1.14.3

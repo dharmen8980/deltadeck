@@ -23,3 +23,6 @@ desktop/release/
 desktop/build/server/
 desktop/build/pyenv/
 desktop/build/pyinstaller/
+
+# python package builds (uv build)
+/dist/

@@ -52,7 +52,7 @@ export const SECURE_PREFS: WebPreferences = {
 export function hardenAppEarly(): void {
   app.enableSandbox();
   // Dev-tree e2e only (Playwright's _electron needs CDP); packaged builds never allow it.
-  const e2e = !app.isPackaged && process.env.LDV_E2E === "1";
+  const e2e = !app.isPackaged && process.env.DELTADECK_E2E === "1";
   for (const sw of ["remote-debugging-port", "remote-debugging-pipe", "remote-debugging-address"]) {
     if (app.commandLine.hasSwitch(sw) && !e2e) {
       console.error(`refusing to start with --${sw}`);

@@ -1,4 +1,4 @@
-"""Changes history (/api/seen*, viewer.seen): CRUD, limits and pruning, renames, namespacing by
+"""Changes history (/api/seen*, deltadeck.seen): CRUD, limits and pruning, renames, namespacing by
 root, the RootGate checks, path refusals, the data-dir overlap refusal, root switches, SSE."""
 
 import hashlib
@@ -12,9 +12,9 @@ import pytest
 from conftest import free_port, snapshot_fs, start_server, stop_server, wait_until, write
 from test_roots import canon, outer, post
 
-from viewer.config import Settings, save_state
-from viewer.roots import RootSwitcher
-from viewer.seen import SEEN_FILE, SeenDB
+from deltadeck.config import Settings, save_state
+from deltadeck.roots import RootSwitcher
+from deltadeck.seen import SEEN_FILE, SeenDB
 
 
 @pytest.fixture

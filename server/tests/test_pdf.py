@@ -13,9 +13,9 @@ import httpx
 import pytest
 
 from conftest import free_port, running, start_server, stop_server, write
-from viewer.app import create_app
-from viewer.config import DEFAULT_UI_DIR, Settings
-from viewer.pdf import PdfRenderer, find_chrome, make_route_guard, make_ws_guard, same_origin, sweep_stale_profiles
+from deltadeck.app import create_app
+from deltadeck.config import DEFAULT_UI_DIR, Settings
+from deltadeck.pdf import PdfRenderer, find_chrome, make_route_guard, make_ws_guard, same_origin, sweep_stale_profiles
 
 
 @pytest.fixture
@@ -198,7 +198,7 @@ def test_idle_closer_closes_at_the_idle_deadline():
 
 
 def test_sweep_stale_profiles(tmp_path):
-    old, fresh, busy, other = (tmp_path / n for n in ("ldv-chrome-old", "ldv-chrome-new", "ldv-chrome-busy",
+    old, fresh, busy, other = (tmp_path / n for n in ("deltadeck-chrome-old", "deltadeck-chrome-new", "deltadeck-chrome-busy",
                                                        "unrelated-old"))
     for d in (old, fresh, busy, other):
         d.mkdir()

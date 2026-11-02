@@ -5,7 +5,7 @@ import { PHASE_DEVELOPMENT_SERVER } from "next/constants";
 // `rewrites` are not allowed together with `output: "export"` (not even in
 // dev), so the config depends on the phase: in `next dev` we proxy /api to the
 // local FastAPI server and do not export.
-const API_ORIGIN = `http://127.0.0.1:${process.env.DOCS_VIEWER_PORT ?? "8765"}`;
+const API_ORIGIN = `http://127.0.0.1:${process.env.DELTADECK_PORT ?? "8765"}`;
 
 const base: NextConfig = {
   reactStrictMode: true,

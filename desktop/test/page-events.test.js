@@ -17,13 +17,13 @@ function run(script) {
   return seen;
 }
 
-test("find menu items dispatch ldv:find with their action", () => {
+test("find menu items dispatch deltadeck:find with their action", () => {
   for (const action of ["open", "next", "prev"]) {
     const [e] = run(findScript(action));
     assert.equal(e.type, FIND_EVENT);
     assert.equal(e.detail, action);
   }
-  assert.equal(FIND_EVENT, "ldv:find");
+  assert.equal(FIND_EVENT, "deltadeck:find");
 });
 
 test("anything else is refused, never put into the script", () => {
@@ -32,6 +32,6 @@ test("anything else is refused, never put into the script", () => {
 
 test("open folder dispatches its plain event", () => {
   const [e] = run(pickFolderScript());
-  assert.equal(e.type, "ldv:pick-folder");
+  assert.equal(e.type, "deltadeck:pick-folder");
   assert.equal(e.detail, undefined);
 });

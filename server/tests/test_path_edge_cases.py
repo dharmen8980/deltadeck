@@ -7,10 +7,10 @@ import unicodedata
 import pytest
 
 from conftest import case_insensitive, running, wait_until, write
-from viewer.config import Settings
-from viewer.paths import PathGuard
-from viewer.search import SearchIndex, match_lines, needles_for
-from viewer.store import Store
+from deltadeck.config import Settings
+from deltadeck.paths import PathGuard
+from deltadeck.search import SearchIndex, match_lines, needles_for
+from deltadeck.store import Store
 
 ENDPOINTS = ("/api/file", "/api/content", "/api/text", "/api/raw", "/api/csv")
 

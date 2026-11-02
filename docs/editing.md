@@ -1,17 +1,19 @@
-# Editing (opt-in)
+# Editing
 
 ```sh
-uv run viewer --allow-edit                       # or DOCS_VIEWER_ALLOW_EDIT=1 uv run viewer
-uv run viewer --allow-edit --data-dir ~/ldv-data  # keep history/trash elsewhere
+uv run deltadeck                                   # editing is on by default
+uv run deltadeck --data-dir ~/deltadeck-data       # keep history/trash elsewhere
+uv run deltadeck --read-only                       # or DELTADECK_READ_ONLY=1: editing off
 ```
 
-Without the flag the viewer behaves exactly as before: no edit UI is shown,
-every `/api/edit/*` request (any method) returns 403 `{"detail":"editing
-disabled"}` and nothing in the docs folder can change (the data dir only
-receives `state.json`, the remembered folders, and `seen.sqlite3`, the
-[changes history](changes.md)). With the
-flag the header shows an **Editing enabled** badge and the server logs
-`EDITING ENABLED` with the data dir path.
+The server logs `editing on` with the data dir path. With `--read-only` no
+edit UI is shown, the header shows a **Read-only** badge, every `/api/edit/*`
+request (any method) returns 403 `{"detail":"editing disabled"}` and nothing
+in the docs folder can change (the data dir only receives `state.json`, the
+remembered folders, and `seen.sqlite3`, the [changes history](changes.md)).
+The same happens in a folder that overlaps the data dir (see [How writes are
+protected](#how-writes-are-protected)). `--allow-edit` is still accepted and
+does nothing.
 
 > **Important: if the folder you edit has no git history** (for example a
 > git-ignored working folder), the viewer's data dir (`.data/` by default) is the only safety net
@@ -88,7 +90,7 @@ What you can do in the browser:
 Everything is stored under the data dir, never inside the docs root. It is not
 served by any read endpoint and not indexed for search. Each docs root gets its
 own store, so two roots sharing one data dir never see or restore each other's
-history or trash (the path is printed at startup with `EDITING ENABLED`):
+history or trash (the path is printed at startup with `editing on`):
 
 ```
 .data/state.json                   {last_root, recent}: the remembered folders (see Choosing and switching folders)
@@ -123,7 +125,7 @@ copying it.
 ```sh
 cd deltadeck
 # back up
-tar czf ~/ldv-data-$(date +%Y%m%d).tgz .data
+tar czf ~/deltadeck-data-$(date +%Y%m%d).tgz .data
 # free space: empty the Trash in the UI, or remove only the history
 rm -rf .data/roots/*/history
 # clear everything (history, trash, audit log and the remembered folders are gone for good)
@@ -174,15 +176,16 @@ ignore lists and the name rules; no component may be a symlink (checked with
 lstat), and the operation itself works through file descriptors of the
 parent folders opened with `O_NOFOLLOW`, so a folder swapped for a symlink
 after the check is refused (403) instead of followed; files are written
-atomically (a `.ldv-tmp-*` file created with `O_EXCL` in the same folder,
+atomically (a `.deltadeck-tmp-*` file created with `O_EXCL` in the same folder,
 fsync, original mode kept, renamed into place, temp file removed on any
 error); creates, copies, moves and Trash restores use a no-replace rename (unless
 overwrite was chosen), so they
 never clobber a file that appeared in the meantime (409); and
 a single process-wide lock serialises all changes. The tree, the search index
 and the live-update stream are updated immediately, so each change is reported
-once (moves as renames). The server refuses to start with `--allow-edit` if
-the data dir is inside the root or the root is inside the data dir. Paths are
+once (moves as renames). If the data dir is inside the root or the root is inside the data dir, that
+folder opens read-only: `/api/config` has `edit_off_reason`, the CLI prints
+`read-only here: ...`; pass `--data-dir` elsewhere to edit it. Paths are
 compared after resolving the real on-disk spelling, ignoring case and Unicode
 normalisation, and by file identity, so `.../LOCAL_DEV/.data` or an NFD
 spelling cannot slip past. In read-only mode a data dir inside the root is

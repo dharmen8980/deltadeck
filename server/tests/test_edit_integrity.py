@@ -10,8 +10,8 @@ import pytest
 from fastapi.testclient import TestClient
 
 from conftest import case_insensitive, editing, running, snapshot_fs, store_of, write
-from viewer.app import create_app
-from viewer.config import ConfigError, Settings
+from deltadeck.app import create_app
+from deltadeck.config import ConfigError, Settings
 
 
 def sha(b: bytes) -> str:
@@ -166,7 +166,7 @@ def test_symlink_swap_race_never_writes_outside(raceworld, data_dir):
         assert c.get("/api/edit/history?path=docs/a.md").json()["versions"] == []
         assert (root / "docs" / "a.md").read_text() == "in\n" and (root / "top.md").read_text() == "top\n"
         assert [i["id"] for i in c.get("/api/edit/trash").json()["items"]] == [tid]
-        assert not [n for _d, _ds, fs in os.walk(root) for n in fs if n.startswith(".ldv-tmp-")]
+        assert not [n for _d, _ds, fs in os.walk(root) for n in fs if n.startswith(".deltadeck-tmp-")]
 
 
 def test_create_never_replaces_a_file_that_appeared(raceworld, data_dir):

@@ -1,4 +1,4 @@
-""".docx support (viewer.docx, /api/docx): conversion to sanitized HTML and markdown, the sanitiser,
+""".docx support (deltadeck.docx, /api/docx): conversion to sanitized HTML and markdown, the sanitiser,
 zip and XML safety, limits, errors, the cache, search, the seen digest, git HEAD and view-only."""
 
 import hashlib
@@ -12,8 +12,8 @@ from conftest import editing, running, wait_until, write
 from docx_build import (PNG_1PX, REL_BASE, STYLES, anchor_link, external_image, footnote_ref, heading, image,
                         link, make_docx, para, run, table)
 
-from viewer import docx as docxmod
-from viewer.docx import DocxError, convert_cached, convert_docx, safe_href, sanitize, to_html
+from deltadeck import docx as docxmod
+from deltadeck.docx import DocxError, convert_cached, convert_docx, safe_href, sanitize, to_html
 
 
 @pytest.fixture(autouse=True)
@@ -343,7 +343,7 @@ def test_api_docx(root):
 
 def test_api_docx_size_limit(root, monkeypatch):
     rich(root / "big.docx")
-    monkeypatch.setattr("viewer.file_routes.DOCX_MAX", 100)
+    monkeypatch.setattr("deltadeck.file_routes.DOCX_MAX", 100)
     with running(root) as c:
         assert c.get("/api/docx?path=big.docx").status_code == 413
 

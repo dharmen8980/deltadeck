@@ -7,8 +7,8 @@ import time
 import pytest
 from conftest import running, snapshot_fs, write
 
-from viewer import git as gitmod
-from viewer.config import settings_from_args
+from deltadeck import git as gitmod
+from deltadeck.config import settings_from_args
 
 GIT = gitmod.find_git("")
 pytestmark = pytest.mark.skipif(GIT is None, reason="git (2.32+) not available")
@@ -332,7 +332,7 @@ def test_find_git_and_setting():
     assert gitmod.find_git("", path_env="") is not None or not os.path.exists("/usr/bin/git")
     s = settings_from_args(["--root", "/tmp", "--git", "off"], env={})
     assert s.git == "off"
-    assert settings_from_args(["--root", "/tmp"], env={"DOCS_VIEWER_GIT": "/x/git"}).git == "/x/git"
+    assert settings_from_args(["--root", "/tmp"], env={"DELTADECK_GIT": "/x/git"}).git == "/x/git"
 
 
 def test_unborn_head(tmp_path):
@@ -369,7 +369,7 @@ def test_detection_timeout_is_retried_after_a_backoff(repo, monkeypatch, caplog)
     calls = _count_detects(monkeypatch, fail_first=1)
     monkeypatch.setattr(gitmod, "DETECT_RETRY_S", 0.5)
     with running(repo) as c:
-        with caplog.at_level("WARNING", logger="viewer"):
+        with caplog.at_level("WARNING", logger="deltadeck"):
             assert c.get("/api/config").json()["git_enabled"] is False
         assert any("timed out" in r.getMessage() and "trying again" in r.getMessage() for r in caplog.records)
         assert c.get("/api/git/status").status_code != 200

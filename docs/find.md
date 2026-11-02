@@ -50,7 +50,7 @@ Previous** with the same shortcuts.
 | CSV, xlsx | Every cell of the loaded rows (header included), in the order shown, so a sort changes the order. The current cell is outlined (a truncated cell shows its full text on hover) |
 | PDF, images, other files | Nothing: the bar says why. In a PDF click into it and use its own find |
 | Folder listings, diffs, blame | The text on the page |
-| Editor (`--allow-edit`) | CodeMirror's own search panel (with replace); the shortcuts and the desktop menu open it |
+| Editor (not with `--read-only`) | CodeMirror's own search panel (with replace); the shortcuts and the desktop menu open it |
 
 ## Limits
 

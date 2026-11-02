@@ -799,6 +799,7 @@ function Shell({ initialConfig }: { initialConfig: AppConfig | null }) {
               onFolder={onFolder}
               onSearch={() => setSearchOpen(true)}
               editEnabled={editEnabled}
+              readOnly={config != null && !config.no_root && !editEnabled ? (config.edit_off_reason ?? "") : undefined}
               editing={showEditor}
               dirty={dirty}
               onEdit={editEnabled && !showEditor && !deleted && isEditable(fileState.data, editMax) && fileState.data?.path === route.path ? startEdit : undefined}

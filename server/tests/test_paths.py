@@ -60,13 +60,14 @@ def test_outside_symlinks_absent_from_tree_and_search(setup):
 
 
 def test_resolve_modes(tmp_path, root):
-    from viewer.config import Settings
-    from viewer.paths import PathError, PathGuard
+    from deltadeck.config import Settings
+    from deltadeck.paths import PathError, PathGuard
 
     write(root / ".env", "S=1\n")
     write(root / "node_modules" / "x.js", "x\n")
     write(root / ".git" / "config", "[core]\n")
-    write(root / ".ldv-tmp-a", "t\n")
+    write(root / ".deltadeck-tmp-a", "t\n")
+    write(root / ".ldv-tmp-a", "t\n")  # the former name
     write(root / "ok.md", "ok\n")
     guard = PathGuard(Settings.make(str(root), data_dir=str(tmp_path / "d")))
 
@@ -81,7 +82,8 @@ def test_resolve_modes(tmp_path, root):
     assert [status(p, "ignored") for p in ("ok.md", "node_modules/x.js", ".env")] == [200, 200, 403]
     assert [status(p, "denied") for p in ("ok.md", "node_modules/x.js", ".env")] == [200, 200, 200]
     for mode in ("none", "ignored", "denied"):
-        assert status(".git/config", mode) == 403 and status(".ldv-tmp-a", mode) == 403
+        assert status(".git/config", mode) == 403 and status(".deltadeck-tmp-a", mode) == 403
+        assert status(".ldv-tmp-a", mode) == 403
     assert guard.hidden_reason("node_modules/.env") == "deny" and guard.hidden_reason("a/node_modules/b") == "ignore"
     assert guard.hidden_reason("ok.md") is None
     assert [guard.name_reason(n) for n in (".git", ".env", "__pycache__", "ok.md")] == ["always", "deny", "ignore", None]

@@ -28,7 +28,7 @@ Lines are 1-based and point at the symbol's name (not at decorators,
 annotations or attributes above it). Statements, calls, variables and control
 flow are not listed, and nor are enum members.
 
-The outline is shown in the viewer only: not in the editor (`--allow-edit`),
+The outline is shown in the viewer only: not in the editor,
 and not for `.docx`, markdown or other file types.
 
 ## How it works

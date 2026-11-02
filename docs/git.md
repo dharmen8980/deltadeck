@@ -80,9 +80,9 @@ Partial clones (`git clone --filter=...`) need git 2.45 or newer; with an older
 git the views are refused for them (see
 [Security model](security.md#git)).
 
-- `--git /path/to/git` or `DOCS_VIEWER_GIT=/path/to/git` uses that executable
+- `--git /path/to/git` or `DELTADECK_GIT=/path/to/git` uses that executable
   (an absolute path; anything else turns git off with a warning).
-- `--git off` or `DOCS_VIEWER_GIT=off` turns every git feature off.
+- `--git off` or `DELTADECK_GIT=off` turns every git feature off.
 - On macOS, `/usr/bin/git` is a stub that opens an "install the command line
   developer tools" dialog when they are missing. The viewer never runs it: it
   asks `xcode-select -p` for the developer folder and runs the git inside it,

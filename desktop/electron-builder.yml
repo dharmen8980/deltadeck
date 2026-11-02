@@ -1,7 +1,7 @@
 # electron-builder: macOS dmg (arm64 / x64, one per build: the frozen Python server is per-arch),
 # Linux AppImage + deb. Unsigned: no Developer ID; after-pack.js flips the Electron fuses and
 # ad-hoc signs the macOS bundle so it launches on Apple Silicon. Build: npm run dist.
-appId: io.github.dharmen8980.localdocsviewer
+appId: io.github.dharmen8980.deltadeck
 productName: DeltaDeck
 copyright: MIT License
 directories:
@@ -13,8 +13,8 @@ files:
   - package.json
   - "!**/*.map"
 extraResources:
-  - from: build/server/viewer-server # scripts/build-server.sh (PyInstaller onedir)
-    to: server/viewer-server
+  - from: build/server/deltadeck-server # scripts/build-server.sh (PyInstaller onedir)
+    to: server/deltadeck-server
   - from: ../web/out # `npm ci && npm run build` in web/
     to: web/out
 afterPack: scripts/after-pack.js

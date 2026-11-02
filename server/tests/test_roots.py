@@ -14,10 +14,10 @@ import pytest
 from conftest import free_port, start_server, stop_server, wait_until, write
 from fastapi.testclient import TestClient
 
-from viewer import cli
-from viewer.app import config_payload
-from viewer.config import Settings, load_state, save_state, settings_from_args
-from viewer.roots import RootSwitcher
+from deltadeck import cli
+from deltadeck.app import config_payload
+from deltadeck.config import Settings, load_state, save_state, settings_from_args
+from deltadeck.roots import RootSwitcher
 
 ORIGIN = "http://127.0.0.1"
 
@@ -72,7 +72,7 @@ def two(tmp_path):
 
 
 def canon(p):
-    from viewer.config import canonical_path
+    from deltadeck.config import canonical_path
     return canonical_path(str(p))
 
 
@@ -82,10 +82,10 @@ def test_resolution_order(tmp_path, two):
     a, b = two
     dd = tmp_path / "data"
     save_state(str(dd), {"last_root": canon(b), "recent": [canon(b)]})
-    env = {"DOCS_VIEWER_DATA_DIR": str(dd)}
-    s = settings_from_args(["--root", str(a)], env={**env, "DOCS_VIEWER_ROOT": str(b)})
+    env = {"DELTADECK_DATA_DIR": str(dd)}
+    s = settings_from_args(["--root", str(a)], env={**env, "DELTADECK_ROOT": str(b)})
     assert (s.root, s.root_source) == (canon(a), "cli")
-    s = settings_from_args([], env={**env, "DOCS_VIEWER_ROOT": str(a)})
+    s = settings_from_args([], env={**env, "DELTADECK_ROOT": str(a)})
     assert (s.root, s.root_source) == (canon(a), "env")
     s = settings_from_args([], env=env)
     assert (s.root, s.root_source) == (canon(b), "state")
@@ -94,7 +94,7 @@ def test_resolution_order(tmp_path, two):
     assert (s.root, s.root_source) == (None, "")
     assert settings_from_args(["--data-dir", str(tmp_path / "empty")], env={}).root is None
     assert settings_from_args(["--lock-root", "--root", str(a)], env={}).lock_root
-    assert settings_from_args(["--root", str(a)], env={"DOCS_VIEWER_LOCK_ROOT": "1"}).lock_root
+    assert settings_from_args(["--root", str(a)], env={"DELTADECK_LOCK_ROOT": "1"}).lock_root
     assert not settings_from_args(["--root", str(a)], env={}).lock_root
 
 
@@ -119,7 +119,7 @@ def test_cli_root_recorded_in_state(tmp_path, two):
         assert c.get("/api/roots").json()["current"] == canon(a)
     st = load_state(str(dd))
     assert st == {"last_root": canon(a), "recent": [canon(a)]}
-    s = settings_from_args([], env={"DOCS_VIEWER_DATA_DIR": str(dd)})
+    s = settings_from_args([], env={"DELTADECK_DATA_DIR": str(dd)})
     assert s.root == canon(a)
 
 
@@ -127,7 +127,7 @@ def test_cli_exits(tmp_path, monkeypatch):
     monkeypatch.setattr(cli.uvicorn, "run", lambda *a, **k: pytest.fail("must not serve"))
     with pytest.raises(SystemExit, match="root folder not found"):
         cli.main(["--root", str(tmp_path / "missing"), "--data-dir", str(tmp_path / "d")])
-    monkeypatch.delenv("DOCS_VIEWER_ROOT", raising=False)
+    monkeypatch.delenv("DELTADECK_ROOT", raising=False)
     with pytest.raises(SystemExit, match="--lock-root needs a folder"):
         cli.main(["--lock-root", "--data-dir", str(tmp_path / "d")])
     served = {}
@@ -339,11 +339,11 @@ def test_edit_mode_per_root(tmp_path, two):
         assert store_a != store_b and os.path.dirname(store_a) == os.path.dirname(store_b)
         assert os.listdir(os.path.join(store_b, "trash"))
         assert not os.path.isdir(os.path.join(store_a, "trash")) or not os.listdir(os.path.join(store_a, "trash"))
-        # a root that contains the data dir is refused while editing; the current root stays
-        r = post(c, "/api/roots/pick")
-        assert r.status_code == 400 and "data dir" in r.json()["detail"]
-        assert c.get("/api/config").json()["root_path"] == canon(b)
-        assert canon(tmp_path) not in c.get("/api/roots").json()["recent"]
+        # a root that contains the data dir opens read-only, saying why
+        assert post(c, "/api/roots/pick").status_code == 200
+        cfg = c.get("/api/config").json()
+        assert cfg["root_path"] == canon(tmp_path) and not cfg["edit_enabled"] and "edit_token" not in cfg
+        assert "overlaps this folder" in cfg["edit_off_reason"]
         r = post(c, "/api/roots/pick")  # missing folder
         assert r.status_code == 400
 
@@ -448,7 +448,7 @@ def test_switches_are_serialised(tmp_path):
 
 
 def test_switched_away_index_stops_and_is_freed(tmp_path, two):
-    from viewer.search import SearchIndex
+    from deltadeck.search import SearchIndex
     a, b = two
     with outer(a, tmp_path / "data") as c:
         c.sw._remember(canon(b))
@@ -460,8 +460,8 @@ def test_switched_away_index_stops_and_is_freed(tmp_path, two):
         assert idx.search("x")["content"] == []
         assert not hasattr(c.sw, "retired")  # stopped apps are not kept by the switcher
     # a stopped index abandons its build instead of reading the whole old tree
-    from viewer.paths import PathGuard
-    from viewer.store import Store
+    from deltadeck.paths import PathGuard
+    from deltadeck.store import Store
     store = Store(PathGuard(Settings.make(str(a), data_dir=str(tmp_path / "data"))))
     store.full_scan()
     idx = SearchIndex(store, 1 << 20)
@@ -481,22 +481,22 @@ def test_control_handlers_run_on_event_loop(tmp_path):
         assert eps and all(inspect.iscoroutinefunction(e) for e in eps)  # sync ones would race on self.state
 
 
-def test_remembered_root_refused_when_editing_falls_back(tmp_path, monkeypatch):
+def test_root_holding_data_dir_opens_read_only(tmp_path, monkeypatch):
     dd = tmp_path / "data"
     inside = dd / "docs"
     write(inside / "x.md", "x")
     save_state(str(dd), {"last_root": canon(inside), "recent": [canon(inside)]})
     served = {}
     monkeypatch.setattr(cli.uvicorn, "run", lambda app, **k: served.setdefault("app", app))
-    monkeypatch.delenv("DOCS_VIEWER_ROOT", raising=False)
-    cli.main(["--allow-edit", "--data-dir", str(dd)])
-    assert served["app"].base.root is None  # no-folder mode instead of "refusing to start"
-    with pytest.raises(SystemExit):  # an explicitly requested root still refuses
-        cli.main(["--allow-edit", "--root", str(inside), "--data-dir", str(dd)])
+    monkeypatch.delenv("DELTADECK_ROOT", raising=False)
+    cli.main(["--data-dir", str(dd)])
+    base = served["app"].base
+    assert base.root == canon(inside) and base.allow_edit  # base stays editable for other folders
+    assert not base.editable().allow_edit and "overlaps this folder" in base.editable().edit_off_reason
 
 
 def test_dialog_runner_parsing():
-    from viewer.roots import PickerError, _run_dialog
+    from deltadeck.roots import PickerError, _run_dialog
 
     never = lambda rc, msg: False
     assert asyncio.run(_run_dialog(["sh", "-c", "printf '/a b /\\n'"], never)) == "/a b /"

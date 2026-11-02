@@ -8,10 +8,10 @@ import pytest
 import uvicorn
 from fastapi.testclient import TestClient
 
-from viewer.app import create_app
-from viewer.config import Settings, canonical_path
-from viewer.paths import PathGuard
-from viewer.store import Store
+from deltadeck.app import create_app
+from deltadeck.config import Settings, canonical_path
+from deltadeck.paths import PathGuard
+from deltadeck.store import Store
 
 
 @contextlib.contextmanager
@@ -88,8 +88,8 @@ def write(path, text=""):
 def _search_index_in_tmp(tmp_path, monkeypatch):
     """Apps made with the default data dir (the repo's .data, which a real viewer may be using)
     keep their search index under tmp_path instead."""
-    from viewer import app as app_mod
-    from viewer.config import DEFAULT_DATA_DIR, canonical_path
+    from deltadeck import app as app_mod
+    from deltadeck.config import DEFAULT_DATA_DIR, canonical_path
 
     real = app_mod.search_index_dir
     default = canonical_path(DEFAULT_DATA_DIR)

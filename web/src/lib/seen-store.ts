@@ -1,5 +1,5 @@
 // History for "Changed since you last looked", kept by the viewer server in its data dir
-// (`/api/seen*`, server/viewer/seen.py), namespaced by the root folder's full path, so every
+// (`/api/seen*`, server/deltadeck/seen.py), namespaced by the root folder's full path, so every
 // browser and tab on that server shares it. Writes carry the per-launch X-Root-Token and a JSON
 // body (same gate as /api/roots). Every request names the root it is for; the server refuses
 // a mismatch (409) after a folder switch. Every method swallows its errors (console.debug) and

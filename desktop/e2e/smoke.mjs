@@ -1,5 +1,5 @@
 // End-to-end smoke test of the desktop app against the real Python server (no folder dialog):
-// a temp docs folder is pre-seeded as last_root in an isolated profile (LDV_USER_DATA_DIR).
+// a temp docs folder is pre-seeded as last_root in an isolated profile (DELTADECK_USER_DATA_DIR).
 //
 //   node e2e/smoke.mjs              dev tree (npm run build first): Playwright _electron drives the
 //                                   window - tree shows the seeded files, open a markdown file,
@@ -34,7 +34,7 @@ async function until(what, fn, ms = 30_000, every = 100) {
 }
 
 // -- fixture: docs folder + isolated profile with state.json -------------------------------------
-const tmp = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "ldv-smoke-")));
+const tmp = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "deltadeck-smoke-")));
 const docs = path.join(tmp, "docs");
 const userData = path.join(tmp, "profile");
 const dataDir = path.join(userData, "data");
@@ -48,7 +48,7 @@ fs.writeFileSync(path.join(docs, "notes", "other.md"), "# Other\n\nhello\n");
 fs.writeFileSync(path.join(docs, "notes", "flow.mmd"), "graph LR; X-->Y;\n");
 fs.writeFileSync(path.join(dataDir, "state.json"), JSON.stringify({ last_root: docs, recent: [docs] }));
 
-const env = { ...process.env, LDV_USER_DATA_DIR: userData };
+const env = { ...process.env, DELTADECK_USER_DATA_DIR: userData };
 delete env.ELECTRON_RUN_AS_NODE;
 
 /** Python child of this run (its argv carries our private data dir). */
@@ -104,7 +104,7 @@ async function dev() {
   const { _electron } = await import("playwright-core");
   const { default: electronPath } = await import("electron");
   const app = await _electron.launch({ executablePath: electronPath, args: [desktop], cwd: desktop,
-    env: { ...env, LDV_E2E: "1" }, timeout: 60_000 });
+    env: { ...env, DELTADECK_E2E: "1" }, timeout: 60_000 });
   let pids = [];
   try {
     const win = await app.firstWindow({ timeout: 45_000 });
@@ -195,7 +195,7 @@ async function packaged(exe) {
   app.stderr.on("data", (d) => (out += d));
   const exited = new Promise((r) => app.once("exit", (code, sig) => r({ code, sig })));
   try {
-    const origin = await until("LDV_READY in the server log", async () => readLog().match(/^LDV_READY (http:\/\/127\.0\.0\.1:\d+)\/$/m)?.[1], 45_000);
+    const origin = await until("DELTADECK_READY in the server log", async () => readLog().match(/^DELTADECK_READY (http:\/\/127\.0\.0\.1:\d+)\/$/m)?.[1], 45_000);
     const ready = Date.now() - spawned;
     // the window's own page load: the UI fetches the tree once it runs
     await until("the window loading the UI", async () => /"GET \/api\/tree HTTP\/1\.1" 200/.test(readLog()), 30_000);
@@ -204,7 +204,7 @@ async function packaged(exe) {
     const pids = serverPids();
     assert.ok(pids.length > 0, "no Python child found");
     const exeName = execFileSync("ps", ["-o", "command=", "-p", String(pids[0])], { encoding: "utf8" });
-    assert.ok(exeName.includes("viewer-server"), `child is not the frozen server: ${exeName}`);
+    assert.ok(exeName.includes("deltadeck-server"), `child is not the frozen server: ${exeName}`);
     assert.ok(/desktop mode; bridge/.test(readLog()));
     await apiChecks(async (url, as) => {
       const r = await fetch(origin + url);

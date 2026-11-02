@@ -5,8 +5,8 @@ import os
 import pytest
 
 from conftest import editing, running, snapshot_fs, write
-from viewer.app import create_app
-from viewer.config import ConfigError, Settings, settings_from_args
+from deltadeck.app import create_app
+from deltadeck.config import ConfigError, Settings, settings_from_args
 
 EDIT_ENDPOINTS = [
     ("PUT", "/api/edit/file", {"path": "new.md", "content": "x", "base_sha256": None}),
@@ -55,16 +55,16 @@ def test_disabled_by_default(tree, data_dir):
 
 def test_settings_from_args_and_env(tmp_path):
     s = settings_from_args(["--root", str(tmp_path)], env={})
-    assert s.allow_edit is False and s.history_keep == 50 and s.upload_max_bytes == 25 * 1024 * 1024
+    assert s.allow_edit is True and s.history_keep == 50 and s.upload_max_bytes == 25 * 1024 * 1024
     assert "md" in s.upload_ext and "exe" not in s.upload_ext
-    assert ".ldv-tmp-*" in s.ignore
+    assert ".deltadeck-tmp-*" in s.ignore and ".ldv-tmp-*" in s.ignore
     s = settings_from_args(["--root", str(tmp_path), "--data-dir", str(tmp_path / "d"), "--history-keep", "3",
                             "--upload-max-mb", "1", "--upload-ext", "md,TXT", "--upload-ext", ".png"], env={})
     assert s.data_dir == os.path.realpath(tmp_path / "d") and s.history_keep == 3
     assert s.upload_max_bytes == 1024 * 1024 and s.upload_ext == ("md", "png", "txt")
-    s = settings_from_args(["--root", str(tmp_path)], env={"DOCS_VIEWER_ALLOW_EDIT": "1",
-                                                           "DOCS_VIEWER_DATA_DIR": str(tmp_path / "e")})
-    assert s.allow_edit and s.data_dir == os.path.realpath(tmp_path / "e")
+    s = settings_from_args(["--root", str(tmp_path)], env={"DELTADECK_READ_ONLY": "1",
+                                                           "DELTADECK_DATA_DIR": str(tmp_path / "e")})
+    assert not s.allow_edit and s.data_dir == os.path.realpath(tmp_path / "e")
     assert settings_from_args(["--root", str(tmp_path), "--allow-edit"], env={}).allow_edit
 
 
@@ -81,12 +81,25 @@ def test_data_dir_inside_root_refused(tmp_path, root):
     assert not (root / ".data").exists() and not (root / "sub").exists()
 
 
-def test_cli_refuses_overlapping_data_dir(root):
-    from viewer.cli import main
+def test_cli_overlapping_data_dir_opens_read_only(root, monkeypatch):
+    from deltadeck import cli
 
-    with pytest.raises(SystemExit) as e:
-        main(["--root", str(root), "--allow-edit", "--data-dir", str(root / "d"), "--ui-dir", str(root) + "-x"])
-    assert "refusing to start" in str(e.value)
+    served = {}
+    monkeypatch.setattr(cli.uvicorn, "run", lambda app, **k: served.setdefault("app", app))
+    cli.main(["--root", str(root), "--data-dir", str(root / "d"), "--ui-dir", str(root) + "-x"])
+    base = served["app"].base
+    assert base.allow_edit and base.editable().allow_edit is False
+    assert "overlaps this folder" in base.editable().edit_off_reason
+
+
+def test_cli_edit_default_and_read_only(tmp_path):
+    from deltadeck.config import settings_from_args
+
+    dd = str(tmp_path / "d")
+    assert settings_from_args(["--data-dir", dd], env={}).allow_edit is True
+    assert settings_from_args(["--data-dir", dd, "--allow-edit"], env={}).allow_edit is True
+    assert settings_from_args(["--data-dir", dd, "--read-only"], env={}).allow_edit is False
+    assert settings_from_args(["--data-dir", dd], env={"DELTADECK_READ_ONLY": "1"}).allow_edit is False
 
 
 def test_read_only_hides_in_root_data_dir(root):

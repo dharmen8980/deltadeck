@@ -65,7 +65,7 @@
   refused, and over 12 MB in all are not content-indexed. Linked images, images over 5 MB (16 MB or 200 in
   total) and EMF/WMF/TIFF images are placeholders. Documents over 20 MB, `.doc`
   files and password-protected documents are refused; very long documents are
-  cut at 2 MB of markdown. They are view-only, even with `--allow-edit`. See
+  cut at 2 MB of markdown. They are view-only, even with editing on. See
   [Word documents](docx.md).
 - Editor completion is name-based, not type-aware: it does not know which
   names are in scope or which members an object has, only words of the

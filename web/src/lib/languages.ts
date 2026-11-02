@@ -1,6 +1,6 @@
 // One table of file extensions and their languages: the Shiki grammar of the highlighted view
 // (none: shown as plain text), the CodeMirror language of the editor, and the code outline's
-// extractor (none: no outline). Keep the server's kinds (server/viewer/paths.py EXT_KINDS) in
+// extractor (none: no outline). Keep the server's kinds (server/deltadeck/paths.py EXT_KINDS) in
 // mind when adding a row: only "code" files reach the highlighted view.
 // No `@/` imports (relative `.ts` ones are fine): unit tested with node --test.
 

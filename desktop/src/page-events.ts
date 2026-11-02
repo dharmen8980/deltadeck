@@ -2,8 +2,8 @@
 // line in the viewer page that dispatches a named window event, with a detail taken from a closed
 // list (never text from elsewhere), so this is the whole surface.
 
-export const PICK_EVENT = "ldv:pick-folder"; // web/src/components/root-switcher.tsx PICK_FOLDER_EVENT
-export const FIND_EVENT = "ldv:find"; // web/src/lib/find/registry.ts FIND_EVENT
+export const PICK_EVENT = "deltadeck:pick-folder"; // web/src/components/root-switcher.tsx PICK_FOLDER_EVENT
+export const FIND_EVENT = "deltadeck:find"; // web/src/lib/find/registry.ts FIND_EVENT
 
 export const FIND_ACTIONS = ["open", "next", "prev"] as const;
 export type FindAction = (typeof FIND_ACTIONS)[number];

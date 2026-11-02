@@ -1,4 +1,4 @@
-"""Editor completion from the search index: identifier extraction (viewer.names), the names tables
+"""Editor completion from the search index: identifier extraction (deltadeck.names), the names tables
 kept in step with the indexed files, the schema bump that rebuilds old indexes, and /api/complete
 (ranking, validation)."""
 
@@ -9,9 +9,9 @@ import pytest
 from conftest import running, write
 from test_search_index import bump, make_index, rescan
 
-from viewer import names as namesmod
-from viewer import search as searchmod
-from viewer.names import extract
+from deltadeck import names as namesmod
+from deltadeck import search as searchmod
+from deltadeck.names import extract
 
 
 def by_name(rows):

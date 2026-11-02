@@ -30,7 +30,7 @@ export class RenderError extends Error {
   }
 }
 
-const PARTITION = "ldv-pdf"; // no "persist:" prefix: in memory only
+const PARTITION = "deltadeck-pdf"; // no "persist:" prefix: in memory only
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 // printToPDF + the post-ready reads, beyond nav + ready. Python gives up at nav + ready + 60s, so
 // the whole job always ends here first (and the hidden window is gone before Python answers 504).

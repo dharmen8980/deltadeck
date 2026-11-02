@@ -25,7 +25,7 @@ export function reloadHome() {
 }
 
 /** Window event the desktop app's File > Open Folder... menu dispatches (from its main process). */
-const PICK_FOLDER_EVENT = "ldv:pick-folder";
+const PICK_FOLDER_EVENT = "deltadeck:pick-folder";
 
 const base = (p: string) => p.replace(/[/\\]+$/, "").split(/[/\\]/).pop() || p;
 

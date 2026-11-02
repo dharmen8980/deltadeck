@@ -19,7 +19,7 @@ declare global {
   }
 }
 
-// Page geometry in mm. The margins match MARGINS in server/viewer/pdf.py.
+// Page geometry in mm. The margins match MARGINS in server/deltadeck/pdf.py.
 const PAPER: Record<string, [number, number]> = { a4: [210, 297], letter: [215.9, 279.4] };
 const MARGIN = { top: 18, bottom: 16, left: 16, right: 16 };
 

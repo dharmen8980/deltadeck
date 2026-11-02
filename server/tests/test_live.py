@@ -8,8 +8,8 @@ import time
 import httpx
 
 from conftest import free_port, running, start_server, stop_server, wait_until, write
-from viewer.app import create_app
-from viewer.config import Settings
+from deltadeck.app import create_app
+from deltadeck.config import Settings
 
 
 def tree_paths(c):
@@ -58,8 +58,8 @@ def test_reconcile_catches_changes_without_watcher(root):
 
 
 def test_rename_inference(root):
-    from viewer.paths import PathGuard
-    from viewer.store import Store
+    from deltadeck.paths import PathGuard
+    from deltadeck.store import Store
 
     write(root / "d1" / "x.md", "same\n")
     write(root / "y.md", "other\n")
@@ -74,8 +74,8 @@ def test_rename_inference(root):
 
 
 def test_in_place_file_rename_inferred(root):
-    from viewer.paths import PathGuard
-    from viewer.store import Store
+    from deltadeck.paths import PathGuard
+    from deltadeck.store import Store
 
     write(root / "d" / "x.md", "same\n")
     store = Store(PathGuard(Settings.make(str(root))))

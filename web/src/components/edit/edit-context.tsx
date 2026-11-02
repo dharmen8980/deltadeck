@@ -32,7 +32,7 @@ export function useEditOps(): EditOps | null {
 }
 
 /** MIME type used for dragging tree rows. */
-export const DRAG_MIME = "application/x-ldv-path";
+export const DRAG_MIME = "application/x-deltadeck-path";
 
 export interface DragPayload {
   path: string;

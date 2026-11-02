@@ -231,7 +231,9 @@ export function utf8Length(s: string): number {
 // ---------- name validation (mirrors the server; the server stays authoritative) ----------
 
 const DEFAULT_DENY = [".env", ".env*", "*token*", "*secret*", "*credential*", "*.pem", "*.key"];
-const DEFAULT_IGNORE = ["__pycache__", "*.pyc", ".DS_Store", "node_modules", ".venv", ".git", ".ldv-tmp-*"];
+const DEFAULT_IGNORE = [
+  "__pycache__", "*.pyc", ".DS_Store", "node_modules", ".venv", ".git", ".deltadeck-tmp-*", ".ldv-tmp-*",
+];
 
 /** NFKC + case folding, like the server's name folding (approximation of str.casefold). */
 export function foldName(s: string): string {

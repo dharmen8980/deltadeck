@@ -20,9 +20,9 @@ import pytest
 from conftest import write
 from fastapi.testclient import TestClient
 
-from viewer.app import create_app
-from viewer.config import Settings, settings_from_args
-from viewer.desktop import (
+from deltadeck.app import create_app
+from deltadeck.config import Settings, settings_from_args
+from deltadeck.desktop import (
     BridgeClient,
     BridgePdfRenderer,
     bridge_picker,
@@ -30,8 +30,8 @@ from viewer.desktop import (
     ready_line,
     start_stdin_watchdog,
 )
-from viewer.pdf import MARGINS_MM, NAV_TIMEOUT_MS, READY_TIMEOUT_MS, PdfError, PdfJob
-from viewer.roots import PickerError, RootSwitcher
+from deltadeck.pdf import MARGINS_MM, NAV_TIMEOUT_MS, READY_TIMEOUT_MS, PdfError, PdfJob
+from deltadeck.roots import PickerError, RootSwitcher
 
 TOKEN = "t" * 43
 FAKE_PDF = b"%PDF-1.7\n% fake\n%%EOF\n"
@@ -113,11 +113,11 @@ def test_check_bridge():
 
 
 def test_settings_desktop_flag(tmp_path):
-    env = {"DOCS_VIEWER_BRIDGE_URL": "http://127.0.0.1:5000", "DOCS_VIEWER_BRIDGE_TOKEN": TOKEN}
+    env = {"DELTADECK_BRIDGE_URL": "http://127.0.0.1:5000", "DELTADECK_BRIDGE_TOKEN": TOKEN}
     s = settings_from_args(["--desktop", "--data-dir", str(tmp_path)], env=env)
-    assert s.desktop and s.bridge_url == env["DOCS_VIEWER_BRIDGE_URL"] and s.bridge_token == TOKEN
+    assert s.desktop and s.bridge_url == env["DELTADECK_BRIDGE_URL"] and s.bridge_token == TOKEN
     assert TOKEN not in repr(s)
-    s = settings_from_args(["--data-dir", str(tmp_path)], env={**env, "DOCS_VIEWER_DESKTOP": "1"})
+    s = settings_from_args(["--data-dir", str(tmp_path)], env={**env, "DELTADECK_DESKTOP": "1"})
     assert s.desktop
     s = settings_from_args(["--data-dir", str(tmp_path)], env=env)  # not desktop: bridge env ignored
     assert not s.desktop and s.bridge_url == "" and s.bridge_token == ""
@@ -303,19 +303,19 @@ def test_api_pdf_in_desktop_app(tmp_path, root):
 # -- process: ready line, stdin EOF, no playwright --------------------------------------------------
 
 def _env(**extra):
-    env = {k: v for k, v in os.environ.items() if not k.startswith("DOCS_VIEWER_")}
+    env = {k: v for k, v in os.environ.items() if not k.startswith(("DELTADECK_", "DOCS_VIEWER_"))}
     env.update(extra)
     return env
 
 
 def test_desktop_without_bridge_env_exits(tmp_path):
-    r = subprocess.run([sys.executable, "-m", "viewer", "--desktop", "--port", str(free_port()),
+    r = subprocess.run([sys.executable, "-m", "deltadeck", "--desktop", "--port", str(free_port()),
                         "--data-dir", str(tmp_path / "data")], env=_env(), capture_output=True, text=True,
                        timeout=30, stdin=subprocess.DEVNULL)
-    assert r.returncode != 0 and "DOCS_VIEWER_BRIDGE_URL" in r.stderr and "LDV_READY" not in r.stdout
-    r = subprocess.run([sys.executable, "-m", "viewer", "--port", str(free_port()), "--data-dir", str(tmp_path)],
-                       env=_env(DOCS_VIEWER_DESKTOP="1", DOCS_VIEWER_BRIDGE_URL="http://evil.example:1",
-                                DOCS_VIEWER_BRIDGE_TOKEN=TOKEN),
+    assert r.returncode != 0 and "DELTADECK_BRIDGE_URL" in r.stderr and "DELTADECK_READY" not in r.stdout
+    r = subprocess.run([sys.executable, "-m", "deltadeck", "--port", str(free_port()), "--data-dir", str(tmp_path)],
+                       env=_env(DELTADECK_DESKTOP="1", DELTADECK_BRIDGE_URL="http://evil.example:1",
+                                DELTADECK_BRIDGE_TOKEN=TOKEN),
                        capture_output=True, text=True, timeout=30, stdin=subprocess.DEVNULL)
     assert r.returncode != 0 and "127.0.0.1" in r.stderr
 
@@ -334,13 +334,13 @@ def test_ready_line_pick_and_stdin_eof(tmp_path):
     port = free_port()
     with FakeBridge(lambda p, b: (200, {"path": str(folder)})) as br:
         proc = subprocess.Popen(
-            [sys.executable, "-m", "viewer", "--desktop", "--port", str(port), "--data-dir", str(tmp_path / "data"),
+            [sys.executable, "-m", "deltadeck", "--desktop", "--port", str(port), "--data-dir", str(tmp_path / "data"),
              "--ui-dir", str(tmp_path / "no-ui")],
-            env=_env(DOCS_VIEWER_BRIDGE_URL=br.url, DOCS_VIEWER_BRIDGE_TOKEN=TOKEN),
+            env=_env(DELTADECK_BRIDGE_URL=br.url, DELTADECK_BRIDGE_TOKEN=TOKEN),
             stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True)
         try:
             line = _read_line(proc.stdout, 30)
-            assert line == ready_line(port) + "\n" == f"LDV_READY http://127.0.0.1:{port}/\n"
+            assert line == ready_line(port) + "\n" == f"DELTADECK_READY http://127.0.0.1:{port}/\n"
             base = f"http://127.0.0.1:{port}"
             cfg = httpx.get(f"{base}/api/config", timeout=5).json()  # accepting connections already
             assert cfg["no_root"] is True
@@ -382,10 +382,10 @@ def test_desktop_never_imports_playwright(tmp_path, root):
     with FakeBridge(ok_pdf) as br:
         code = textwrap.dedent(f"""
             import sys
-            import viewer.desktop, viewer.app, viewer.cli, viewer.roots, viewer.__main__
+            import deltadeck.desktop, deltadeck.app, deltadeck.cli, deltadeck.roots, deltadeck.__main__
             from fastapi.testclient import TestClient
-            from viewer.app import create_app
-            from viewer.config import settings_from_args
+            from deltadeck.app import create_app
+            from deltadeck.config import settings_from_args
             s = settings_from_args(["--desktop", "--root", {str(root)!r}, "--ui-dir", {str(ui)!r},
                                     "--data-dir", {str(tmp_path / "data")!r}])
             with TestClient(create_app(s), base_url="http://127.0.0.1") as c:
@@ -395,5 +395,5 @@ def test_desktop_never_imports_playwright(tmp_path, root):
             print("ok")
         """)
         r = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, timeout=60,
-                           env=_env(DOCS_VIEWER_BRIDGE_URL=br.url, DOCS_VIEWER_BRIDGE_TOKEN=TOKEN))
+                           env=_env(DELTADECK_BRIDGE_URL=br.url, DELTADECK_BRIDGE_TOKEN=TOKEN))
     assert r.returncode == 0 and r.stdout.strip() == "ok", r.stderr[-2000:]

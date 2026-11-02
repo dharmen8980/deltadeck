@@ -17,7 +17,7 @@ viewer server in its data dir, never inside the folder you browse.
   text other than the one you saw is ever stored. If the file changes
   while it is open, the banner and the highlights update live. The newer
   version only becomes "seen" once you move on.
-- Your own saves in the editor (`--allow-edit`) count as seen the moment they
+- Your own saves in the editor count as seen the moment they
   are saved, so they never produce a banner or a dot, however you leave the
   editor.
 - A file counts as changed when its modification time or its size differs from
@@ -162,7 +162,7 @@ Details:
 ## Where the data lives
 
 The server keeps the history in one SQLite file, `seen.sqlite3`, in its data
-dir (the same folder as `state.json`: `--data-dir` / `DOCS_VIEWER_DATA_DIR`,
+dir (the same folder as `state.json`: `--data-dir` / `DELTADECK_DATA_DIR`,
 by default `.data/` in the checkout; the desktop app uses `<userData>/data`).
 Records are keyed by the full path of the root folder, so two root folders
 never share history. The diffing and the highlights still happen in the

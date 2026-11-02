@@ -6,11 +6,11 @@ import path from "node:path";
 import { app } from "electron";
 
 export interface Settings {
-  allowEdit: boolean; // --allow-edit for the server; default off
+  allowEdit: boolean; // false = --read-only for the server; default on
   port: number | null; // last viewer port, reused so the origin (and its localStorage) stays stable
 }
 
-const DEFAULTS: Settings = { allowEdit: false, port: null };
+const DEFAULTS: Settings = { allowEdit: true, port: null };
 
 export const userFile = (name: string) => path.join(app.getPath("userData"), name);
 
@@ -38,7 +38,7 @@ const validPort = (p: unknown): p is number => Number.isInteger(p) && (p as numb
 export function loadSettings(): Settings {
   const raw = readJson(userFile("settings.json")) as Partial<Settings> | null;
   return {
-    allowEdit: raw?.allowEdit === true,
+    allowEdit: raw?.allowEdit !== false,
     port: validPort(raw?.port) ? raw!.port! : DEFAULTS.port,
   };
 }

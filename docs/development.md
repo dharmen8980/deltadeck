@@ -8,7 +8,7 @@ Running from source, the dev server, and the tests.
 - Node.js and npm. Built and tested with Node 26 and Next.js 16.4.
 - Google Chrome, only for PDF export. The system install is used
   (`/Applications/Google Chrome.app` or `~/Applications/...` on macOS,
-  `google-chrome` on Linux, or the `DOCS_VIEWER_CHROME` env var pointing at the
+  `google-chrome` on Linux, or the `DELTADECK_CHROME` env var pointing at the
   executable). The `playwright` Python package drives it; **never run
   `playwright install`**, no browser is downloaded.
 
@@ -28,8 +28,8 @@ If the default uv cache is not writable, use
 
 ```sh
 cd web && npm run build        # writes web/out (static export)
-cd .. && uv run viewer         # http://127.0.0.1:8765/  (choose a folder in the browser)
-uv run viewer --root ~/notes   # or start on a given folder
+cd .. && uv run deltadeck         # http://127.0.0.1:8765/  (choose a folder in the browser)
+uv run deltadeck --root ~/notes   # or start on a given folder
 ```
 
 If `web/out` is missing, the server still serves `/api/*`. It prints a hint to
@@ -38,12 +38,12 @@ run `npm run build`, and `/` returns a 503 JSON message.
 ## Dev mode (hot reload for the UI)
 
 ```sh
-uv run viewer                  # backend on 127.0.0.1:8765
+uv run deltadeck                  # backend on 127.0.0.1:8765
 cd web && npm run dev          # Next dev server on http://127.0.0.1:3000
 ```
 
 In the development phase, `next.config.ts` proxies `/api/*` to
-`http://127.0.0.1:${DOCS_VIEWER_PORT:-8765}`. It also turns off gzip so the SSE
+`http://127.0.0.1:${DELTADECK_PORT:-8765}`. It also turns off gzip so the SSE
 stream is not buffered. The production build is a plain `output: 'export'` with
 no rewrites. Both npm scripts set `NEXT_TELEMETRY_DISABLED=1`, and the dev
 server binds to 127.0.0.1 only.
@@ -139,7 +139,7 @@ see each change exactly once. `test_roots.py` covers folder switching: startup
 resolution (CLI > env > `state.json`), the no-folder mode, pick (with a fake
 dialog), cancel, switch only to recent folders, forget, the token / Origin /
 Sec-Fetch-Site / content-type gate, `--lock-root`, edit mode per folder and
-the data-dir overlap refusal, the old app's SSE streams and background tasks
+the data-dir overlap opening read-only, the old app's SSE streams and background tasks
 ending after a switch, and serialised concurrent switches. No test opens a
 real dialog. All of them use `tmp_path` roots and data dirs.
 `test_seen.py` covers the changes history (`/api/seen*`): commit / get /
@@ -197,7 +197,7 @@ and git's last-commit version as markdown.
 cancel, 409, timeout and token refusal; PDF success, the payload (same-origin
 `/print` URL and query, templates, margins, timeouts) and every error-status
 mapping; the CLI refusing `--desktop` without the bridge env, printing
-`LDV_READY` once it accepts connections, exiting on stdin EOF; and that
+`DELTADECK_READY` once it accepts connections, exiting on stdin EOF; and that
 playwright is never imported.
 
 Frontend checks: `cd web && npm run lint && npx tsc --noEmit`.
@@ -261,3 +261,49 @@ memory macOS keeps), not index data. Query latency stayed in the same range
 for snippets). With a cap in force a file change costs about 15 ms of CPU
 (the full re-plan, about 70-100 ms, runs in the background at most every
 5 s); the write-ahead log peaked at 19 MB during the synthetic build.
+
+## Releasing
+
+One tag releases both the desktop app and the Python package.
+
+1. Bump the version in `pyproject.toml`, `server/deltadeck/__init__.py`,
+   `desktop/package.json` and `web/package.json` (and the top of their
+   `package-lock.json` files). Run `uv lock`.
+2. Commit, then tag and push: `git tag v0.2.0 && git push origin v0.2.0`.
+3. The desktop-release workflow builds the DMGs, the AppImage and the deb into
+   a draft GitHub release. Check it and publish it. The install script only
+   sees published releases.
+4. The pypi-release workflow builds the web UI, the wheel and the sdist,
+   smoke-tests the wheel and publishes to PyPI with trusted publishing (no
+   token). It fails if the tag does not match the `pyproject.toml` version.
+
+Run either workflow by hand (workflow_dispatch) to build without releasing.
+
+### The Python package
+
+The wheel carries the built UI as `deltadeck/ui` (`hatch_build.py`). Build
+the UI first; without `web/out` the wheel build stops with an error.
+
+```sh
+cd web && npm run build && cd ..
+uv build --out-dir /tmp/dd-dist
+uvx --from /tmp/dd-dist/deltadeck-0.2.0-py3-none-any.whl deltadeck --root ~/notes
+```
+
+The server looks for the UI in the installed package first, then in the
+checkout's `web/out`. Installed from a wheel, the default data dir is
+`~/.local/share/deltadeck` (or `$XDG_DATA_HOME/deltadeck`); from a checkout it
+stays `.data`. `uv sync` installs the checkout in editable mode and skips the
+UI copy.
+
+### One-time PyPI setup
+
+1. Create an account on [pypi.org](https://pypi.org) and turn on 2FA.
+2. Under Account settings, Publishing, add a pending trusted publisher:
+   PyPI project name `deltadeck`, owner `dharmen8980`, repository `deltadeck`,
+   workflow `pypi-release.yml`, environment `pypi`.
+3. In the GitHub repository, Settings, Environments, create an environment
+   named `pypi`. Optionally add yourself as a required reviewer, so each
+   publish waits for approval.
+
+The first tagged run creates the project on PyPI.

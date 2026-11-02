@@ -14,6 +14,7 @@ import {
   GitCommitHorizontalIcon,
   GitCompareArrowsIcon,
   HistoryIcon,
+  LockIcon,
   MonitorIcon,
   MoonIcon,
   MoreHorizontalIcon,
@@ -107,6 +108,8 @@ export interface FileHeaderProps {
   onSearch: () => void;
   /** Tier 3 editing (all optional; absent means the read-only header). */
   editEnabled?: boolean;
+  /** editing is off for this folder: why ("" = started with --read-only) */
+  readOnly?: string;
   editing?: boolean;
   dirty?: boolean;
   /** start editing the open file (only passed when it is editable) */
@@ -262,6 +265,7 @@ export function FileHeader({
   onFolder,
   onSearch,
   editEnabled = false,
+  readOnly,
   editing = false,
   dirty = false,
   onEdit,
@@ -349,14 +353,14 @@ export function FileHeader({
 
       <div className="flex shrink-0 items-center gap-0.5">
         <BasketMenu />
-        {editEnabled ? (
+        {readOnly !== undefined ? (
           <Badge
             variant="outline"
-            className="mr-1 gap-1 border-amber-500/50 text-amber-700 dark:text-amber-400"
-            title="This server was started with --allow-edit: files can be changed from the browser."
+            className="mr-1 gap-1 text-muted-foreground"
+            title={`Editing is off: ${readOnly || "this server was started with --read-only"}.`}
           >
-            <PencilIcon className="size-3" aria-hidden />
-            <span className="sr-only lg:not-sr-only">Editing enabled</span>
+            <LockIcon className="size-3" aria-hidden />
+            <span className="sr-only lg:not-sr-only">Read-only</span>
           </Badge>
         ) : null}
         {editing ? (

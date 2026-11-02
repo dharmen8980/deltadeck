@@ -45,8 +45,8 @@ exports.default = async function afterPack(ctx) {
   await flipFuses(app, FUSES);
   if (!mac) return;
   // 1. the frozen server (Resources is not covered by --deep): dylibs/.so first, executable last
-  const server = path.join(app, "Contents", "Resources", "server", "viewer-server");
-  const exe = path.join(server, "viewer-server");
+  const server = path.join(app, "Contents", "Resources", "server", "deltadeck-server");
+  const exe = path.join(server, "deltadeck-server");
   const libs = [...walk(server)].filter((f) => f !== exe && isMachO(f));
   for (let i = 0; i < libs.length; i += 200) sign(libs.slice(i, i + 200));
   sign([exe]);

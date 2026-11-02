@@ -9,11 +9,11 @@ import time
 import pytest
 
 from conftest import case_insensitive, make_store, running, wait_until, write
-from viewer import reconcile as reconcile_mod
-from viewer import store as store_mod
-from viewer.config import Settings, settings_from_args
-from viewer.paths import PathGuard
-from viewer.store import Reconciler, _apply_batch, backstop_intervals, watch_loop
+from deltadeck import reconcile as reconcile_mod
+from deltadeck import store as store_mod
+from deltadeck.config import Settings, settings_from_args
+from deltadeck.paths import PathGuard
+from deltadeck.store import Reconciler, _apply_batch, backstop_intervals, watch_loop
 
 
 def tree(s):
@@ -586,8 +586,8 @@ def test_rescan_options_from_cli_and_env(tmp_path):
     s = settings_from_args(base + ["--rescan-interval", "20", "--full-rescan-interval", "0", "--rescan-when-idle"],
                            env={})
     assert (s.reconcile_interval, s.full_reconcile_interval, s.rescan_when_idle) == (20.0, 0.0, True)
-    env = {"DOCS_VIEWER_RESCAN_INTERVAL": "45", "DOCS_VIEWER_FULL_RESCAN_INTERVAL": "600",
-           "DOCS_VIEWER_RESCAN_WHEN_IDLE": "1"}
+    env = {"DELTADECK_RESCAN_INTERVAL": "45", "DELTADECK_FULL_RESCAN_INTERVAL": "600",
+           "DELTADECK_RESCAN_WHEN_IDLE": "1"}
     s = settings_from_args(base, env=env)
     assert (s.reconcile_interval, s.full_reconcile_interval, s.rescan_when_idle) == (45.0, 600.0, True)
     s = settings_from_args(base + ["--rescan-interval", "5"], env=env)  # flag beats env

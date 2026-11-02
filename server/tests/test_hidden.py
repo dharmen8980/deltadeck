@@ -8,14 +8,14 @@ import subprocess
 import pytest
 from conftest import running, wait_until, write
 
-from viewer import git as gitmod
-from viewer import hidden as hidden_mod
-from viewer.config import Settings, canonical_path, settings_from_args
-from viewer.git import GitError, GitLink
-from viewer.hidden import GitIgnored
-from viewer.paths import PathGuard
-from viewer.reconcile import Reconciler, _apply_batch
-from viewer.store import Store
+from deltadeck import git as gitmod
+from deltadeck import hidden as hidden_mod
+from deltadeck.config import Settings, canonical_path, settings_from_args
+from deltadeck.git import GitError, GitLink
+from deltadeck.hidden import GitIgnored
+from deltadeck.paths import PathGuard
+from deltadeck.reconcile import Reconciler, _apply_batch
+from deltadeck.store import Store
 
 GIT = gitmod.find_git("")
 pytestmark = pytest.mark.skipif(GIT is None, reason="git (2.32+) not available")
@@ -56,7 +56,7 @@ def repo(tmp_path):
     write(r / "node_modules" / "x.js", "x\n")
     write(r / "node_modules" / ".env", "NODE=1\n")
     write(r / ".env", "SECRET=zqsecretvalue\n")
-    write(r / ".ldv-tmp-x", "tmp\n")
+    write(r / ".deltadeck-tmp-x", "tmp\n")
     return r
 
 
@@ -258,7 +258,7 @@ def test_reveal(repo):
         assert c.get("/api/raw?path=node_modules/x.js").status_code == 200
         assert c.get("/api/content?path=.git/config").status_code == 403
         assert c.get("/api/content?path=.git/config&reveal=1").status_code == 403
-        assert c.get("/api/content?path=.ldv-tmp-x&reveal=1").status_code == 403
+        assert c.get("/api/content?path=.deltadeck-tmp-x&reveal=1").status_code == 403
     with running(repo, allow_reveal=False) as c:
         assert c.get("/api/config").json()["reveal_enabled"] is False
         assert c.get("/api/content?path=.env&reveal=1").status_code == 403
@@ -282,7 +282,7 @@ def test_edit_refuses_hidden(repo, tmp_path):
 def test_no_reveal_flag():
     s = settings_from_args(["--no-reveal"], env={})
     assert s.allow_reveal is False
-    assert settings_from_args([], env={"DOCS_VIEWER_NO_REVEAL": "1"}).allow_reveal is False
+    assert settings_from_args([], env={"DELTADECK_NO_REVEAL": "1"}).allow_reveal is False
     assert settings_from_args([], env={}).allow_reveal is True
 
 

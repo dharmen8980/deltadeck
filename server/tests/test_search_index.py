@@ -1,4 +1,4 @@
-"""The on-disk, contentless search index (viewer.search): rows in and out, snippets from disk,
+"""The on-disk, contentless search index (deltadeck.search): rows in and out, snippets from disk,
 persistence and incremental restarts, rebuilds of unusable databases, caps and their status, where
 the database lives, cleanup on stop and path safety."""
 
@@ -9,12 +9,12 @@ import tempfile
 import pytest
 from conftest import make_store, running, write
 
-from viewer import search as searchmod
-from viewer.config import Settings, canonical_path, settings_from_args
-from viewer.paths import PathGuard
-from viewer.search import (SearchIndex, index_file, match_lines, needles_for, plan_selection, prune_indexes,
+from deltadeck import search as searchmod
+from deltadeck.config import Settings, canonical_path, settings_from_args
+from deltadeck.paths import PathGuard
+from deltadeck.search import (SearchIndex, index_file, match_lines, needles_for, plan_selection, prune_indexes,
                            root_key, selection_key)
-from viewer.store import Entry, Store
+from deltadeck.store import Entry, Store
 
 MB = 1024 * 1024
 
@@ -179,7 +179,7 @@ def test_snippets_are_path_guarded(root, idir, tmp_path):
 def test_docx_snippets_from_cache_and_budget(root, idir, monkeypatch):
     from docx_build import make_docx, para
 
-    from viewer import docx as docxmod
+    from deltadeck import docx as docxmod
 
     make_docx(root / "r.docx", para("zqdocxsnip line"))
     docxmod.cache_clear()
@@ -367,8 +367,8 @@ def test_caps_and_status(root, idir):
 def test_cap_options_from_cli_and_env(root):
     s = settings_from_args(["--root", str(root), "--search-max-files", "7", "--search-max-total-mb", "1.5"], env={})
     assert s.search_max_files == 7 and s.search_max_total_bytes == int(1.5 * MB)
-    s = settings_from_args(["--root", str(root)], env={"DOCS_VIEWER_SEARCH_MAX_FILES": "9",
-                                                       "DOCS_VIEWER_SEARCH_MAX_TOTAL_MB": "3"})
+    s = settings_from_args(["--root", str(root)], env={"DELTADECK_SEARCH_MAX_FILES": "9",
+                                                       "DELTADECK_SEARCH_MAX_TOTAL_MB": "3"})
     assert s.search_max_files == 9 and s.search_max_total_bytes == 3 * MB
     s = settings_from_args(["--root", str(root)], env={})
     assert s.search_max_files == 100_000 and s.search_max_total_bytes == 2048 * MB
@@ -404,7 +404,7 @@ def test_disk_full_keeps_what_was_indexed(root, idir):
 # -- where the database lives ---------------------------------------------------------------------
 
 def test_data_dir_inside_root_uses_temp_file(root):
-    from viewer.app import search_index_dir
+    from deltadeck.app import search_index_dir
 
     write(root / "a.md", "zqtemp\n")
     before = sorted(os.listdir(root))
@@ -516,15 +516,15 @@ def test_sweep_temp_removes_only_abandoned(root, tmp_path, monkeypatch):
     monkeypatch.setattr(tempfile, "tempdir", str(tmp))
     write(root / "a.md", "zqsweep\n")
     live = make_index(root, None)  # a running viewer's temporary index: locked
-    old = write(tmp / "ldv-search-dead" / "index.sqlite3", "x").parent  # a killed viewer's leftover
-    young = write(tmp / "ldv-search-new" / "index.sqlite3", "x").parent
+    old = write(tmp / "deltadeck-search-dead" / "index.sqlite3", "x").parent  # a killed viewer's leftover
+    young = write(tmp / "deltadeck-search-new" / "index.sqlite3", "x").parent
     other = write(tmp / "unrelated" / "f", "x").parent
     past = os.stat(old).st_mtime - 3600
     for d in (old, other, live._tmp_dir):
         os.utime(d, (past, past))
     try:
         assert live.location == "temp"
-        assert searchmod.sweep_temp(str(tmp)) == ["ldv-search-dead"]
+        assert searchmod.sweep_temp(str(tmp)) == ["deltadeck-search-dead"]
         assert not old.exists() and young.exists() and other.exists() and os.path.isdir(live._tmp_dir)
         assert paths(live, "zqsweep") == ["a.md"]
     finally:

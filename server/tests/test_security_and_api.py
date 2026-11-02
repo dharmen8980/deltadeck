@@ -5,8 +5,8 @@ import os
 import pytest
 
 from conftest import running, write
-from viewer.app import CSP, find_repo_prefix
-from viewer.paths import kind_of
+from deltadeck.app import CSP, find_repo_prefix
+from deltadeck.paths import kind_of
 
 
 @pytest.fixture
@@ -172,8 +172,8 @@ def test_config_repo_prefix(tmp_path):
 def test_static_ui_mounted_after_api(tmp_path, root):
     from fastapi.testclient import TestClient
 
-    from viewer.app import create_app
-    from viewer.config import Settings
+    from deltadeck.app import create_app
+    from deltadeck.config import Settings
 
     ui = tmp_path / "out"
     write(ui / "index.html", "<html>zqindex</html>")

@@ -1,7 +1,7 @@
-// The Python viewer server as a child process. Dev: `uv run --project <repo> viewer`; packaged: the
+// The Python viewer server as a child process. Dev: `uv run --project <repo> deltadeck`; packaged: the
 // PyInstaller onedir binary in resources/server. It gets --desktop, the bridge URL/token in its
 // env and stdin as a pipe that stays open: closing it (or our death) tells it to exit. It reports
-// `LDV_READY http://127.0.0.1:P/` on stdout once it accepts connections. Output goes to userData/logs.
+// `DELTADECK_READY http://127.0.0.1:P/` on stdout once it accepts connections. Output goes to userData/logs.
 
 import { ChildProcess, spawn } from "node:child_process";
 import fs from "node:fs";
@@ -13,7 +13,7 @@ const READY_TIMEOUT_MS = 30_000;
 const STOP_GRACE_MS = 5_000;
 const TERM_GRACE_MS = 2_000;
 const LOG_MAX = 5 * 1024 * 1024;
-const READY_RE = /^LDV_READY (http:\/\/127\.0\.0\.1:(\d+)\/)\s*$/;
+const READY_RE = /^DELTADECK_READY (http:\/\/127\.0\.0\.1:(\d+)\/)\s*$/;
 
 export const REPO_DIR = path.resolve(__dirname, "..", ".."); // desktop/dist -> repo (dev only)
 export const logsDir = () => path.join(app.getPath("userData"), "logs");
@@ -41,14 +41,14 @@ export async function freePort(preferred: number | null): Promise<number> {
 
 function command(): { cmd: string; args: string[]; cwd: string; env: NodeJS.ProcessEnv } {
   if (app.isPackaged) {
-    const exe = path.join(process.resourcesPath, "server", "viewer-server", "viewer-server");
+    const exe = path.join(process.resourcesPath, "server", "deltadeck-server", "deltadeck-server");
     return { cmd: exe, args: [], cwd: path.dirname(exe), env: {} };
   }
   // GUI launches get a minimal PATH: add the usual uv install locations.
   const home = app.getPath("home");
   const extra = [path.join(home, ".local", "bin"), path.join(home, ".cargo", "bin"), "/opt/homebrew/bin", "/usr/local/bin"];
   const PATH = [...(process.env.PATH ?? "").split(path.delimiter).filter(Boolean), ...extra].join(path.delimiter);
-  return { cmd: "uv", args: ["run", "--project", REPO_DIR, "viewer"], cwd: REPO_DIR, env: { PATH } };
+  return { cmd: "uv", args: ["run", "--project", REPO_DIR, "deltadeck"], cwd: REPO_DIR, env: { PATH } };
 }
 
 const uiDir = () => app.isPackaged ? path.join(process.resourcesPath, "web", "out") : path.join(REPO_DIR, "web", "out");
@@ -93,18 +93,21 @@ export class ServerProcess {
   private stopping = false;
   private exited: Promise<void> = Promise.resolve();
 
-  /** Spawn and resolve with the viewer URL once LDV_READY arrives (reject on timeout / early exit). */
+  /** Spawn and resolve with the viewer URL once DELTADECK_READY arrives (reject on timeout / early exit). */
   start(o: ServerOptions): Promise<string> {
     const { cmd, args, cwd, env } = command();
     fs.mkdirSync(dataDir(), { recursive: true, mode: 0o700 });
     const argv = [...args, "--desktop", "--port", String(o.port), "--ui-dir", uiDir(), "--data-dir", dataDir()];
-    if (o.allowEdit) argv.push("--allow-edit");
+    if (!o.allowEdit) argv.push("--read-only");
     const log = openLog();
     log.write(`\n--- ${new Date().toISOString()} starting: ${cmd} ${argv.join(" ")}\n`);
-    const childEnv: NodeJS.ProcessEnv = { ...process.env, ...env, DOCS_VIEWER_DESKTOP: "1",
-      DOCS_VIEWER_BRIDGE_URL: o.bridgeUrl, DOCS_VIEWER_BRIDGE_TOKEN: o.bridgeToken, PYTHONUNBUFFERED: "1" };
-    for (const k of ["ELECTRON_RUN_AS_NODE", "NODE_OPTIONS", "DOCS_VIEWER_ROOT", "DOCS_VIEWER_PORT",
-      "DOCS_VIEWER_DATA_DIR", "DOCS_VIEWER_ALLOW_EDIT", "DOCS_VIEWER_LOCK_ROOT"]) delete childEnv[k];
+    const childEnv: NodeJS.ProcessEnv = { ...process.env, ...env, DELTADECK_DESKTOP: "1",
+      DELTADECK_BRIDGE_URL: o.bridgeUrl, DELTADECK_BRIDGE_TOKEN: o.bridgeToken, PYTHONUNBUFFERED: "1" };
+    for (const k of ["ELECTRON_RUN_AS_NODE", "NODE_OPTIONS"]) delete childEnv[k];
+    // DOCS_VIEWER_*: the former prefix, still read by the server as a fallback
+    for (const p of ["DELTADECK_", "DOCS_VIEWER_"]) {
+      for (const k of ["ROOT", "PORT", "DATA_DIR", "ALLOW_EDIT", "LOCK_ROOT"]) delete childEnv[p + k];
+    }
     this.stopping = false;
     const child = spawn(cmd, argv, { cwd, env: childEnv, stdio: ["pipe", "pipe", log.fd], detached: false });
     this.child = child;

@@ -5,34 +5,35 @@ Flags, environment variables, and how the docs folder is chosen and switched.
 ## Options
 
 Precedence is CLI flag, then environment variable, then default. The root
-folder has no built-in default: without `--root` / `DOCS_VIEWER_ROOT` the
+folder has no built-in default: without `--root` / `DELTADECK_ROOT` the
 viewer reopens the folder used last (`last_root` in `<data dir>/state.json`, if
-it still exists) and otherwise starts with no folder selected.
+it still exists) and otherwise starts with no folder selected. The former
+`DOCS_VIEWER_*` names of the variables still work (a `DELTADECK_*` one wins).
 
 | Setting | Flag | Env | Default |
 |---|---|---|---|
-| Root folder | `--root PATH` | `DOCS_VIEWER_ROOT` | the last folder chosen (from `state.json`), else none: choose one in the browser (resolved with realpath at startup); a given folder that does not exist is a startup error |
-| Lock the root | `--lock-root` | `DOCS_VIEWER_LOCK_ROOT=1` | off (the browser may switch folders); needs a root |
-| Port | `--port N` | `DOCS_VIEWER_PORT` | `8765` |
+| Root folder | `--root PATH` | `DELTADECK_ROOT` | the last folder chosen (from `state.json`), else none: choose one in the browser (resolved with realpath at startup); a given folder that does not exist is a startup error |
+| Lock the root | `--lock-root` | `DELTADECK_LOCK_ROOT=1` | off (the browser may switch folders); needs a root |
+| Port | `--port N` | `DELTADECK_PORT` | `8765` |
 | Host | none | none | always `127.0.0.1` (hardcoded, not configurable) |
-| Deny patterns (add) | `--deny PATTERN` (repeatable) | `DOCS_VIEWER_DENY` (comma-separated) | `.env`, `.env*`, `*token*`, `*secret*`, `*credential*`, `*.pem`, `*.key` |
+| Deny patterns (add) | `--deny PATTERN` (repeatable) | `DELTADECK_DENY` (comma-separated) | `.env`, `.env*`, `*token*`, `*secret*`, `*credential*`, `*.pem`, `*.key` |
 | Drop default deny list | `--no-default-deny` | none | off |
-| Never show denied files | `--no-reveal` | `DOCS_VIEWER_NO_REVEAL=1` | off: a denied file can be shown read-only on request; see [Hidden files](#hidden-files) |
-| Ignore patterns (add) | `--ignore PATTERN` (repeatable) | `DOCS_VIEWER_IGNORE` (comma-separated) | `__pycache__`, `*.pyc`, `.DS_Store`, `node_modules`, `.venv`, `.git`, `.ldv-tmp-*` |
-| Search size limit | `--search-max-mb N` | `DOCS_VIEWER_SEARCH_MAX_MB` | `2` (larger files are not indexed for content search) |
-| Search: files indexed in all | `--search-max-files N` | `DOCS_VIEWER_SEARCH_MAX_FILES` | `100000` (see [Search index](#search-index)) |
-| Search: total size indexed | `--search-max-total-mb N` | `DOCS_VIEWER_SEARCH_MAX_TOTAL_MB` | `2048` (the indexed files' sizes added up; a `.docx` counts its file size) |
-| UI directory | `--ui-dir PATH` | none | `web/out` next to this README |
-| Editing | `--allow-edit` | `DOCS_VIEWER_ALLOW_EDIT=1` | off (read-only) |
-| Data dir (history, trash, audit, `state.json`) | `--data-dir PATH` | `DOCS_VIEWER_DATA_DIR` | `.data` next to this README |
+| Never show denied files | `--no-reveal` | `DELTADECK_NO_REVEAL=1` | off: a denied file can be shown read-only on request; see [Hidden files](#hidden-files) |
+| Ignore patterns (add) | `--ignore PATTERN` (repeatable) | `DELTADECK_IGNORE` (comma-separated) | `__pycache__`, `*.pyc`, `.DS_Store`, `node_modules`, `.venv`, `.git`, `.deltadeck-tmp-*`, `.ldv-tmp-*` |
+| Search size limit | `--search-max-mb N` | `DELTADECK_SEARCH_MAX_MB` | `2` (larger files are not indexed for content search) |
+| Search: files indexed in all | `--search-max-files N` | `DELTADECK_SEARCH_MAX_FILES` | `100000` (see [Search index](#search-index)) |
+| Search: total size indexed | `--search-max-total-mb N` | `DELTADECK_SEARCH_MAX_TOTAL_MB` | `2048` (the indexed files' sizes added up; a `.docx` counts its file size) |
+| UI directory | `--ui-dir PATH` | none | installed package: the UI bundled in it (`deltadeck/ui`); source checkout: `web/out` next to this README |
+| Read-only (no editing) | `--read-only` | `DELTADECK_READ_ONLY=1` | off: editing is on, except in a folder that overlaps the data dir (see [Editing](editing.md#how-writes-are-protected)) |
+| Data dir (history, trash, audit, `state.json`) | `--data-dir PATH` | `DELTADECK_DATA_DIR` | installed package: `~/.local/share/deltadeck` (or `$XDG_DATA_HOME/deltadeck`); source checkout: `.data` next to this README |
 | Versions kept per file | `--history-keep N` | none | `50` |
 | Upload size limit per file | `--upload-max-mb N` | none | `25` |
 | Upload extensions | `--upload-ext EXT` (repeatable or comma-separated; replaces the list) | none | `png jpg jpeg gif webp svg pdf md mmd txt csv json yaml yml py sh log` |
-| Git views | `--git PATH\|off` | `DOCS_VIEWER_GIT` | found on `PATH`, then `/opt/homebrew/bin`, `/usr/local/bin`, `/usr/bin`, `/bin` (never the macOS stub); `off` turns them off; see [Git](git.md#which-git) |
-| Backstop directory pass | `--rescan-interval SECONDS` | `DOCS_VIEWER_RESCAN_INTERVAL` | `300` (`60` on a network volume); `0` = off; see [Change detection](#change-detection) |
-| Backstop full pass | `--full-rescan-interval SECONDS` | `DOCS_VIEWER_FULL_RESCAN_INTERVAL` | `1800` (`600` on a network volume); `0` = off |
-| Backstop while nobody is connected | `--rescan-when-idle` | `DOCS_VIEWER_RESCAN_WHEN_IDLE=1` | off: the timers pause, and a pass that fell due runs when a browser connects |
-| Desktop mode (set by the desktop app) | `--desktop` | `DOCS_VIEWER_DESKTOP=1` | off; see [Desktop app](desktop.md) |
+| Git views | `--git PATH\|off` | `DELTADECK_GIT` | found on `PATH`, then `/opt/homebrew/bin`, `/usr/local/bin`, `/usr/bin`, `/bin` (never the macOS stub); `off` turns them off; see [Git](git.md#which-git) |
+| Backstop directory pass | `--rescan-interval SECONDS` | `DELTADECK_RESCAN_INTERVAL` | `300` (`60` on a network volume); `0` = off; see [Change detection](#change-detection) |
+| Backstop full pass | `--full-rescan-interval SECONDS` | `DELTADECK_FULL_RESCAN_INTERVAL` | `1800` (`600` on a network volume); `0` = off |
+| Backstop while nobody is connected | `--rescan-when-idle` | `DELTADECK_RESCAN_WHEN_IDLE=1` | off: the timers pause, and a pass that fell due runs when a browser connects |
+| Desktop mode (set by the desktop app) | `--desktop` | `DELTADECK_DESKTOP=1` | off; see [Desktop app](desktop.md) |
 
 Deny and ignore patterns are case-insensitive `fnmatch` globs. Names and
 patterns are compared after Unicode NFKC normalisation and case folding (so
@@ -46,11 +47,12 @@ listed, searched or tracked, but it opens when asked for by path.
 Example:
 
 ```sh
-uv run viewer --root ~/notes --port 9000 --deny '*.sqlite' --ignore 'dist'
+uv run deltadeck --root ~/notes --port 9000 --deny '*.sqlite' --ignore 'dist'
 ```
 
-`.ldv-tmp-*` (the editor's temporary files during an atomic save) is on the
-default ignore list, so it never shows in the tree or search.
+`.deltadeck-tmp-*` (the editor's temporary files during an atomic save; also
+`.ldv-tmp-*`, their former name) is on the default ignore list, so it never
+shows in the tree or search.
 
 ## Hidden files
 
@@ -72,7 +74,7 @@ a note that they are hidden. Git-ignored files open normally; ignore-list files
 open read-only. A denied file asks first and then shows read-only.
 `--no-reveal` turns that off, and denied names are then not listed either.
 
-`.git`, `.ldv-tmp-*` and the data dir are never shown.
+`.git`, `.deltadeck-tmp-*` and the data dir are never shown.
 
 A change to a `.gitignore` in the folder applies at the next watcher event.
 Rules from elsewhere (a `.gitignore` above the folder, global excludes) apply
@@ -203,18 +205,18 @@ The server builds a fresh app for the new folder (tree scan, search index,
 watcher, edit store), starts it, swaps it in and then shuts the old one down;
 open live-update streams of the old folder end and the browser reconnects.
 Switches are serialised, and only one folder dialog can be open at a time.
-With `--allow-edit` each folder gets its own recovery store (keyed by its
+With editing on each folder gets its own recovery store (keyed by its
 path) and a new edit token; a folder that contains the data dir (or lies
-inside it) is refused with 400 and the current folder stays.
+inside it) opens read-only (`edit_off_reason` in `/api/config` says why).
 
 The last folder and up to 10 recent folders (canonical paths, most recent
 first) are remembered in `<data dir>/state.json`
 (`{"last_root": ..., "recent": [...]}`, written atomically, mode 0600). A
-folder given with `--root` / `DOCS_VIEWER_ROOT` is recorded there too; folders
+folder given with `--root` / `DELTADECK_ROOT` is recorded there too; folders
 that no longer exist are dropped from the list. In read-only mode nothing is
 written if the data dir lies inside the folder being viewed.
 
-`--lock-root` (or `DOCS_VIEWER_LOCK_ROOT=1`) pins the folder given at startup:
+`--lock-root` (or `DELTADECK_LOCK_ROOT=1`) pins the folder given at startup:
 the menu is hidden and every `POST /api/roots/*` returns 403. The changes
 history (`/api/seen/*`, see [Security model](security.md#the-apiseen-endpoints))
 keeps working, writes and **Clear history…** included: it lives in the data dir
@@ -231,7 +233,7 @@ and never changes which folder is shown or anything inside it.
 
 All answers are JSON with `Cache-Control: no-store`. A browser request can
 never name an arbitrary folder: new folders enter only through the native
-dialog (a person at this machine clicking) or `--root` / `DOCS_VIEWER_ROOT`.
+dialog (a person at this machine clicking) or `--root` / `DELTADECK_ROOT`.
 The mutating requests are guarded like `/api/edit/*`: a per-launch random
 `X-Root-Token` (from `/api/config` as `root_token`, only for same-site
 requests; it survives folder switches), `Sec-Fetch-Site: same-origin` or no

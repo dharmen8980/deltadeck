@@ -10,7 +10,8 @@ TRAVERSAL = ["../x.md", "a/../../x.md", "sub/../../x.md", "/etc/x.md", "\\x.md",
              "./x.md", "sub/./x.md", "..", ".", "", "sub//x.md", "sub/", "\u2025/x.md", "\uff0e\uff0e/x.md",
              "sub\uff0fx.md", "C:/x.md", "x\x00.md"]
 BAD_NAMES = [".env", ".ENV", ".env.local", "x_token.md", "X_TOKEN.md", "my-\u017fecret.md", "creds.pem",
-             "id.key", "__pycache__", "a.pyc", ".DS_Store", ".ldv-tmp-123", "node_modules", "sub/.env",
+             "id.key", "__pycache__", "a.pyc", ".DS_Store", ".deltadeck-tmp-123", ".ldv-tmp-123", "node_modules",
+             "sub/.env",
              "sub/secret/x.md", "x\x01.md", "x\x7f.md", "trailing.", "trailing ", " leading.md", "a" * 256 + ".md",
              "\u202eevil.md", "x\u200b.md"]
 
@@ -101,7 +102,7 @@ def test_folder_moves_and_deny_contents(world, data_dir):
         assert c.post("/api/edit/move", json={"from": "guarded", "to": "g2"}).status_code == 403
         assert c.post("/api/edit/delete", json={"path": "guarded"}).status_code == 403
         # renaming into a denied/ignored name
-        for to in (".env", "sub/.env", "a_secret.md", "__pycache__", ".ldv-tmp-x"):
+        for to in (".env", "sub/.env", "a_secret.md", "__pycache__", ".deltadeck-tmp-x", ".ldv-tmp-x"):
             assert c.post("/api/edit/move", json={"from": "a.md", "to": to}).status_code == 403, to
             assert c.post("/api/edit/mkdir", json={"path": to}).status_code == 403, to
     assert snapshot_fs(root) == before

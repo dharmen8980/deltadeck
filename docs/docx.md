@@ -4,7 +4,7 @@
 markdown viewer: the same typography, table of contents, heading links, search
 highlights, "changed since you last looked" highlights, print and **Download
 PDF**. It does not try to look like Word. The file is never edited or written,
-even with `--allow-edit` (saving a `.docx` through `/api/edit/file` answers
+even with editing on (saving a `.docx` through `/api/edit/file` answers
 415).
 
 ## What is shown

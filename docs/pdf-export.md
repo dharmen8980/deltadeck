@@ -63,7 +63,7 @@ Cross-site requests are refused with 403: when the browser sends
 `Sec-Fetch-Site` it must be `same-origin` or `none`, and an `Origin` header must
 be a loopback `http://` origin, so a web page cannot make the viewer launch
 Chrome with e.g. `<img src="http://127.0.0.1:8765/api/pdf?...">`. Temporary
-profiles left behind by a crashed or killed server (`ldv-chrome-*` in the temp
+profiles left behind by a crashed or killed server (`deltadeck-chrome-*` in the temp
 dir, older than 10 minutes and not locked by a live Chrome) are removed the next
 time Chrome starts. In dev mode the PDF is still rendered from the built `web/out`
 served by FastAPI, so rebuild after changing the print page.

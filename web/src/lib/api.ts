@@ -36,8 +36,10 @@ export interface AppConfig {
   /** served by the desktop app (its server takes no command-line options) */
   desktop?: boolean;
   version: string | number;
-  /** Tier 3 (opt-in editing). Absent on older/read-only servers: treat as false. */
+  /** Tier 3 editing (on unless --read-only). Absent on older servers: treat as false. */
   edit_enabled?: boolean;
+  /** editing allowed but off for this folder (the data dir overlaps it): why */
+  edit_off_reason?: string | null;
   /** Per-launch token for /api/edit/*, only present when editing is enabled. */
   edit_token?: string;
   deny_patterns?: string[];
@@ -304,7 +306,7 @@ async function getJson<T>(url: string, signal?: AbortSignal): Promise<T> {
     res = await fetch(url, { signal, cache: "no-store", credentials: "same-origin" });
   } catch (e) {
     if ((e as Error).name === "AbortError") throw e;
-    throw new ApiError(0, "Cannot reach the viewer server. Is `uv run viewer` running?", null);
+    throw new ApiError(0, "Cannot reach the viewer server. Is `uv run deltadeck` running?", null);
   }
   if (!res.ok) {
     let body: unknown = null;
