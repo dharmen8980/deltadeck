@@ -231,7 +231,7 @@ def create_app(settings: Settings) -> FastAPI:
             await pdf.close()
 
     app = FastAPI(
-        title="local-docs-viewer", version=__version__, lifespan=lifespan,
+        title="DeltaDeck", version=__version__, lifespan=lifespan,
         docs_url=None, redoc_url=None, openapi_url=None,
         telemetry={"tracing": False, "metrics": False, "logs": False,
                    "operation_spans": False, "auto_configure": False},

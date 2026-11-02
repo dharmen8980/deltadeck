@@ -1,4 +1,4 @@
-// Local Docs Viewer desktop shell: starts the bridge, spawns the Python viewer server (--desktop) on
+// DeltaDeck desktop shell: starts the bridge, spawns the Python viewer server (--desktop) on
 // a loopback port, and shows it in one hardened window. See bridge.ts for the Python <-> Electron
 // contract and security.ts for the renderer lockdown.
 
@@ -13,10 +13,12 @@ import { dataDir, freePort, logFile, logsDir, ServerProcess } from "./server-pro
 import { loadSettings, saveSettings, Settings } from "./settings";
 import { loadWindowState, trackWindowState } from "./window-state";
 
-app.setName("Local Docs Viewer");
+app.setName("DeltaDeck");
 // A throw-away profile for automated checks (e2e/smoke.mjs; packaged too). Absolute paths only.
+// Otherwise userData keeps the folder of the app's former name, Local Docs Viewer: settings,
+// remembered folders and the data dir stay where they were.
 const udd = process.env.LDV_USER_DATA_DIR;
-if (udd && path.isAbsolute(udd)) app.setPath("userData", udd);
+app.setPath("userData", udd && path.isAbsolute(udd) ? udd : path.join(app.getPath("appData"), "Local Docs Viewer"));
 hardenAppEarly();
 hardenWebContents();
 
@@ -38,7 +40,7 @@ function createWindow(): BrowserWindow {
     minWidth: 480,
     minHeight: 360,
     show: false,
-    title: "Local Docs Viewer",
+    title: "DeltaDeck",
     backgroundColor: "#ffffff",
     ...(icon && process.platform === "linux" && fs.existsSync(icon) ? { icon } : {}),
     webPreferences: { ...SECURE_PREFS, plugins: true /* inline PDFs */, devTools: !app.isPackaged },
@@ -192,7 +194,7 @@ if (!app.requestSingleInstanceLock()) {
   void app.whenReady().then(async () => {
     settings = loadSettings();
     hardenSession(session.defaultSession, { pdf: false });
-    app.setAboutPanelOptions({ applicationName: "Local Docs Viewer", applicationVersion: app.getVersion(),
+    app.setAboutPanelOptions({ applicationName: "DeltaDeck", applicationVersion: app.getVersion(),
       copyright: "MIT License", website: HOMEPAGE });
     const icon = iconPath();
     if (icon && process.platform === "darwin" && fs.existsSync(icon)) app.dock?.setIcon(nativeImage.createFromPath(icon));

@@ -2,7 +2,7 @@
 # Linux AppImage + deb. Unsigned: no Developer ID; after-pack.js flips the Electron fuses and
 # ad-hoc signs the macOS bundle so it launches on Apple Silicon. Build: npm run dist.
 appId: io.github.dharmen8980.localdocsviewer
-productName: Local Docs Viewer
+productName: DeltaDeck
 copyright: MIT License
 directories:
   output: release
@@ -20,7 +20,7 @@ extraResources:
 afterPack: scripts/after-pack.js
 npmRebuild: false
 publish: null
-artifactName: local-docs-viewer-${version}-${os}-${arch}.${ext}
+artifactName: deltadeck-${version}-${os}-${arch}.${ext}
 mac:
   target: dmg # arch from the CLI (--arm64 / --x64): scripts/dist.mjs passes the host arch
   category: public.app-category.productivity
@@ -31,15 +31,15 @@ mac:
   darkModeSupport: true
   minimumSystemVersion: "12.0"
   extendInfo: # the text of macOS's folder-access prompt (git reading a .git outside the opened folder)
-    NSDesktopFolderUsageDescription: Local Docs Viewer reads the folder you open and, for git views, its repository, which can live outside it.
-    NSDocumentsFolderUsageDescription: Local Docs Viewer reads the folder you open and, for git views, its repository, which can live outside it.
-    NSDownloadsFolderUsageDescription: Local Docs Viewer reads the folder you open and, for git views, its repository, which can live outside it.
+    NSDesktopFolderUsageDescription: DeltaDeck reads the folder you open and, for git views, its repository, which can live outside it.
+    NSDocumentsFolderUsageDescription: DeltaDeck reads the folder you open and, for git views, its repository, which can live outside it.
+    NSDownloadsFolderUsageDescription: DeltaDeck reads the folder you open and, for git views, its repository, which can live outside it.
 dmg:
   writeUpdateInfo: false
 linux:
   target: [AppImage, deb]
   category: Utility
-  executableName: local-docs-viewer
+  executableName: deltadeck
   syncDesktopName: true # WM_CLASS = desktopName (package.json): the window links to its .desktop entry
   icon: build/icon.png
   maintainer: dharmen8980 <dharmen8980@users.noreply.github.com>

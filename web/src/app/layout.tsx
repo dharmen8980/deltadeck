@@ -5,8 +5,8 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "viewer",
-  description: "Local, read-only docs viewer",
+  title: "DeltaDeck",
+  description: "DeltaDeck: review what changed in a local folder",
   referrer: "no-referrer",
   robots: { index: false, follow: false },
 };

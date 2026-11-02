@@ -1,6 +1,7 @@
-# local-docs-viewer
+# DeltaDeck
 
-A local-only web viewer for one folder of documents. It is **read-only by
+Every change, stacked for review. DeltaDeck is a local-only viewer for one
+folder of documents and code. It is **read-only by
 default**; editing and file management can be switched on with `--allow-edit`
 (see [Editing](docs/editing.md)). The folder is given with `--root` /
 `DOCS_VIEWER_ROOT`, or chosen in the browser with the native folder dialog and

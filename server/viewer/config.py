@@ -197,7 +197,7 @@ def _split_env(value: str | None) -> list[str]:
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="viewer",
-        description="Local docs viewer: read-only unless --allow-edit (always binds 127.0.0.1).",
+        description="DeltaDeck: read-only unless --allow-edit (always binds 127.0.0.1).",
     )
     p.add_argument("--root", help="folder to browse (env DOCS_VIEWER_ROOT; default: the last folder chosen "
                                   "in the browser, else none - choose one in the browser)")

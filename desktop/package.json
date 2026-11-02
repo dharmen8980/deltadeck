@@ -1,9 +1,9 @@
 {
   "name": "local-docs-viewer-desktop",
-  "productName": "Local Docs Viewer",
+  "productName": "DeltaDeck",
   "version": "0.1.0",
   "private": true,
-  "description": "Desktop shell (Electron) for local-docs-viewer",
+  "description": "Desktop shell (Electron) for DeltaDeck",
   "license": "MIT",
   "author": "dharmen8980",
   "homepage": "https://github.com/dharmen8980/local-docs-viewer",
@@ -30,5 +30,5 @@
     "playwright-core": "^1.64.1",
     "typescript": "^7.0.2"
   },
-  "desktopName": "local-docs-viewer.desktop"
+  "desktopName": "deltadeck.desktop"
 }

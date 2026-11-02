@@ -179,9 +179,9 @@ function defaultExe() {
   const rel = path.join(desktop, "release");
   if (process.platform === "darwin") {
     const dir = process.arch === "arm64" ? "mac-arm64" : "mac";
-    return path.join(rel, dir, "Local Docs Viewer.app", "Contents", "MacOS", "Local Docs Viewer");
+    return path.join(rel, dir, "DeltaDeck.app", "Contents", "MacOS", "DeltaDeck");
   }
-  return path.join(rel, "linux-unpacked", "local-docs-viewer");
+  return path.join(rel, "linux-unpacked", "deltadeck");
 }
 
 async function packaged(exe) {

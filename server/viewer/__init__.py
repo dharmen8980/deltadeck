@@ -1,3 +1,3 @@
-"""Read-only local docs viewer (FastAPI backend)."""
+"""DeltaDeck viewer server (FastAPI backend)."""
 
 __version__ = "0.1.0"
