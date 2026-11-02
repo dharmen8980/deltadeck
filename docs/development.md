@@ -15,8 +15,8 @@ Running from source, the dev server, and the tests.
 ## Install
 
 ```sh
-git clone https://github.com/dharmen8980/local-docs-viewer.git
-cd local-docs-viewer
+git clone https://github.com/dharmen8980/deltadeck.git
+cd deltadeck
 uv sync                 # Python deps into .venv
 cd web && npm ci        # JS deps (all assets are bundled; nothing loads from a CDN)
 ```

@@ -4,7 +4,7 @@
 import { app, Menu, MenuItemConstructorOptions, shell } from "electron";
 import type { FindAction } from "./page-events";
 
-export const HOMEPAGE = "https://github.com/dharmen8980/local-docs-viewer";
+export const HOMEPAGE = "https://github.com/dharmen8980/deltadeck";
 
 export interface MenuActions {
   allowEdit: boolean;

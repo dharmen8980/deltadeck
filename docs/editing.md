@@ -121,7 +121,7 @@ The data dir is plain files; stop the server (or at least do not edit) while
 copying it.
 
 ```sh
-cd local-docs-viewer
+cd deltadeck
 # back up
 tar czf ~/ldv-data-$(date +%Y%m%d).tgz .data
 # free space: empty the Trash in the UI, or remove only the history

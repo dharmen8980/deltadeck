@@ -6,7 +6,7 @@
   "description": "Desktop shell (Electron) for DeltaDeck",
   "license": "MIT",
   "author": "dharmen8980",
-  "homepage": "https://github.com/dharmen8980/local-docs-viewer",
+  "homepage": "https://github.com/dharmen8980/deltadeck",
   "main": "dist/main.js",
   "scripts": {
     "build": "tsc -p .",

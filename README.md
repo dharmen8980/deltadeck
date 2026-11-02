@@ -69,15 +69,15 @@ What it does:
 ## Get it
 
 **Desktop app (macOS, Linux):** download the `.dmg`, `.AppImage` or `.deb` from
-[Releases](https://github.com/dharmen8980/local-docs-viewer/releases). The app
+[Releases](https://github.com/dharmen8980/deltadeck/releases). The app
 is unsigned for now: on macOS, right-click it and choose **Open** the first
 time. Details in [docs/desktop.md](docs/desktop.md).
 
 **From source** (needs [uv](https://docs.astral.sh/uv/) and Node.js):
 
 ```sh
-git clone https://github.com/dharmen8980/local-docs-viewer.git
-cd local-docs-viewer
+git clone https://github.com/dharmen8980/deltadeck.git
+cd deltadeck
 uv sync
 cd web && npm ci && npm run build && cd ..
 uv run viewer                  # http://127.0.0.1:8765/ (choose a folder in the browser)
