@@ -44,10 +44,27 @@ function Kbd({ children }: { children: ReactNode }) {
   );
 }
 
-function Section({ id, title, intro, children }: { id: string; title: string; intro?: ReactNode; children: ReactNode }) {
+function Section({
+  id,
+  title,
+  intro,
+  children,
+}: {
+  id: string;
+  title: string;
+  intro?: ReactNode;
+  children: ReactNode;
+}) {
   return (
-    <section id={id} aria-labelledby={`${id}-title`} className="mx-auto max-w-6xl px-4 py-16 sm:px-6 sm:py-20">
-      <h2 id={`${id}-title`} className="text-2xl font-semibold tracking-tight sm:text-3xl">
+    <section
+      id={id}
+      aria-labelledby={`${id}-title`}
+      className="mx-auto max-w-6xl px-4 py-4 sm:px-6 sm:py-8"
+    >
+      <h2
+        id={`${id}-title`}
+        className="text-2xl font-semibold tracking-tight sm:text-3xl"
+      >
         {title}
       </h2>
       {intro && <p className="mt-3 max-w-2xl text-muted-foreground">{intro}</p>}
@@ -65,17 +82,32 @@ function Header() {
           <img src="/logo.svg" alt="" width={24} height={24} />
           DeltaDeck
         </a>
-        <nav aria-label="Sections" className="ml-auto flex items-center gap-1 text-sm">
-          <a href="#how" className="hidden rounded-md px-2.5 py-1.5 text-muted-foreground hover:text-foreground sm:block">
+        <nav
+          aria-label="Sections"
+          className="ml-auto flex items-center gap-1 text-sm"
+        >
+          <a
+            href="#how"
+            className="hidden rounded-md px-2.5 py-1.5 text-muted-foreground hover:text-foreground sm:block"
+          >
             How it works
           </a>
-          <a href="#features" className="hidden rounded-md px-2.5 py-1.5 text-muted-foreground hover:text-foreground sm:block">
+          <a
+            href="#features"
+            className="hidden rounded-md px-2.5 py-1.5 text-muted-foreground hover:text-foreground sm:block"
+          >
             Features
           </a>
-          <a href="#install" className="rounded-md px-2.5 py-1.5 text-muted-foreground hover:text-foreground">
+          <a
+            href="#install"
+            className="rounded-md px-2.5 py-1.5 text-muted-foreground hover:text-foreground"
+          >
             Install
           </a>
-          <a href="#faq" className="hidden rounded-md px-2.5 py-1.5 text-muted-foreground hover:text-foreground sm:block">
+          <a
+            href="#faq"
+            className="hidden rounded-md px-2.5 py-1.5 text-muted-foreground hover:text-foreground sm:block"
+          >
             FAQ
           </a>
           <Button asChild variant="ghost" size="icon-sm">
@@ -91,17 +123,31 @@ function Header() {
 
 function Hero() {
   return (
-    <section aria-labelledby="hero-title" className="mx-auto max-w-6xl px-4 pt-16 pb-12 sm:px-6 sm:pt-24">
-      <Badge variant="outline" className="mb-6 h-6 gap-1.5 px-2.5 text-muted-foreground">
-        <span className="size-1.5 rounded-full bg-emerald-500" aria-hidden /> Free, open source, local only
+    <section
+      aria-labelledby="hero-title"
+      className="mx-auto max-w-6xl px-4 pt-16 pb-12 sm:px-6 sm:pt-24"
+    >
+      <Badge
+        variant="outline"
+        className="mb-6 h-6 gap-1.5 px-2.5 text-muted-foreground"
+      >
+        <span className="size-1.5 rounded-full bg-emerald-500" aria-hidden />{" "}
+        Free, open source, local only
       </Badge>
-      <h1 id="hero-title" className="text-5xl font-semibold tracking-tight sm:text-6xl">
+      <h1
+        id="hero-title"
+        className="text-5xl font-semibold tracking-tight sm:text-6xl"
+      >
         DeltaDeck
       </h1>
       <p className="mt-4 text-2xl font-medium tracking-tight sm:text-3xl">
-        Every change, <span className="text-amber-600 dark:text-amber-400">stacked</span> for review.
+        Every change,{" "}
+        <span className="text-amber-600 dark:text-amber-400">stacked</span> for
+        review.
       </p>
-      <p className="mt-5 max-w-2xl text-lg leading-relaxed text-muted-foreground">{DESCRIPTION}</p>
+      <p className="mt-5 max-w-2xl text-lg leading-relaxed text-muted-foreground">
+        {DESCRIPTION}
+      </p>
       <div className="mt-8 flex flex-wrap gap-3">
         <Button asChild size="lg" className="h-10 px-4">
           <a href="#install">
@@ -127,7 +173,8 @@ const STEPS = [
     title: "The deck",
     body: (
       <>
-        Every change since you last looked, across the folder. <strong className="font-medium text-foreground">What&apos;s new</strong>{" "}
+        Every change since you last looked, across the folder.{" "}
+        <strong className="font-medium text-foreground">What&apos;s new</strong>{" "}
         lists them, newest first. Files you have not seen get a dot.
       </>
     ),
@@ -137,8 +184,8 @@ const STEPS = [
     title: "Flip through",
     body: (
       <>
-        Open a file and the changes are highlighted in place. <Kbd>n</Kbd> and <Kbd>p</Kbd> jump to the next and
-        previous change.
+        Open a file and the changes are highlighted in place. <Kbd>n</Kbd> and{" "}
+        <Kbd>p</Kbd> jump to the next and previous change.
       </>
     ),
   },
@@ -147,8 +194,8 @@ const STEPS = [
     title: "Pick cards",
     body: (
       <>
-        <Kbd>b</Kbd> puts a change in the review basket, with a note if you like. <Kbd>c</Kbd> copies just that one
-        change.
+        <Kbd>b</Kbd> puts a change in the review basket, with a note if you
+        like. <Kbd>c</Kbd> copies just that one change.
       </>
     ),
   },
@@ -157,8 +204,9 @@ const STEPS = [
     title: "Deal back",
     body: (
       <>
-        <strong className="font-medium text-foreground">Copy for AI</strong> builds one prompt with a diff and your note
-        per change. Paste it into your agent.
+        <strong className="font-medium text-foreground">Copy for AI</strong>{" "}
+        builds one prompt with a diff and your note per change. Paste it into
+        your agent.
       </>
     ),
   },
@@ -178,23 +226,31 @@ function HowItWorks() {
               <span className="flex size-8 items-center justify-center rounded-lg bg-sky-500/10 text-sky-700 dark:text-sky-300">
                 <Icon className="size-4" aria-hidden />
               </span>
-              <span className="text-xs font-medium text-muted-foreground tabular-nums">Step {i + 1}</span>
+              <span className="text-xs font-medium text-muted-foreground tabular-nums">
+                Step {i + 1}
+              </span>
             </div>
             <h3 className="mt-4 font-semibold">{title}</h3>
-            <p className="mt-2 text-sm leading-6 text-muted-foreground">{body}</p>
+            <p className="mt-2 text-sm leading-6 text-muted-foreground">
+              {body}
+            </p>
           </li>
         ))}
       </ol>
       <div className="mt-10 grid items-start gap-6 lg:grid-cols-[1fr_1.2fr]">
         <div className="space-y-3 text-sm leading-6 text-muted-foreground">
-          <h3 className="text-base font-semibold text-foreground">What lands in your agent</h3>
+          <h3 className="text-base font-semibold text-foreground">
+            What lands in your agent
+          </h3>
           <p>
-            One markdown prompt. Each item has its location, whether it was added, edited or removed, a diff of the old
-            and new text, and your note.
+            One markdown prompt. Each item has its location, whether it was
+            added, edited or removed, a diff of the old and new text, and your
+            note.
           </p>
           <p>
-            Paths are relative to the git repository, so an agent running at the repo root finds the files. Code items
-            carry the line range and the enclosing symbol.
+            Paths are relative to the git repository, so an agent running at the
+            repo root finds the files. Code items carry the line range and the
+            enclosing symbol.
           </p>
         </div>
         <div className="overflow-hidden rounded-xl border bg-card">
@@ -279,14 +335,19 @@ function Features() {
           <li key={title} className="rounded-xl border bg-card p-5">
             <Icon className="size-5 text-muted-foreground" aria-hidden />
             <h3 className="mt-3 font-semibold">{title}</h3>
-            <p className="mt-2 text-sm leading-6 text-muted-foreground">{body}</p>
+            <p className="mt-2 text-sm leading-6 text-muted-foreground">
+              {body}
+            </p>
           </li>
         ))}
         <li className="rounded-xl border border-dashed p-5 text-sm leading-6 text-muted-foreground">
-          <h3 className="text-base font-semibold text-foreground">Opens what agents touch</h3>
+          <h3 className="text-base font-semibold text-foreground">
+            Opens what agents touch
+          </h3>
           <p className="mt-2">
-            Markdown with mermaid, Word .docx, source code with an outline, JSON, CSV and xlsx tables, images, PDFs and
-            large logs. Markdown and .docx export to PDF.
+            Markdown with mermaid, Word .docx, source code with an outline,
+            JSON, CSV and xlsx tables, images, PDFs and large logs. Markdown and
+            .docx export to PDF.
           </p>
         </li>
       </ul>
@@ -336,7 +397,9 @@ function Faq() {
         {FAQ.map(({ q, a }) => (
           <div key={q}>
             <dt className="font-semibold">{q}</dt>
-            <dd className="mt-2 text-sm leading-6 text-muted-foreground">{a}</dd>
+            <dd className="mt-2 text-sm leading-6 text-muted-foreground">
+              {a}
+            </dd>
           </div>
         ))}
       </dl>
@@ -354,10 +417,16 @@ function Footer() {
           DeltaDeck · Made for reviewing AI work
         </span>
         <span className="flex gap-4 sm:ml-auto">
-          <a href={REPO_URL} className="inline-flex items-center gap-1.5 hover:text-foreground">
+          <a
+            href={REPO_URL}
+            className="inline-flex items-center gap-1.5 hover:text-foreground"
+          >
             <GithubIcon className="size-3.5" /> GitHub
           </a>
-          <a href={`${REPO_URL}/blob/main/LICENSE`} className="hover:text-foreground">
+          <a
+            href={`${REPO_URL}/blob/main/LICENSE`}
+            className="hover:text-foreground"
+          >
             MIT License
           </a>
         </span>
