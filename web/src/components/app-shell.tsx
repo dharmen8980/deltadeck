@@ -355,12 +355,13 @@ function Shell({ initialConfig }: { initialConfig: AppConfig | null }) {
   useEffect(() => flushPending(route.path), [route.path, flushPending]);
 
   const root = useMemo(() => (tree ? buildTree(tree, { hidden: showHidden }) : null), [tree, showHidden]);
-  const rootName = config?.root_name ?? "viewer";
+  const rootName = config?.root_name ?? "DeltaDeck";
 
   useEffect(() => {
-    const name = route.path ? `${route.path.split("/").pop()} · ${rootName} viewer` : `${rootName} viewer`;
+    const where = [route.path.split("/").pop(), config?.root_name].filter(Boolean).join(" · ");
+    const name = where ? `${where} — DeltaDeck` : "DeltaDeck";
     document.title = edit && dirty ? `● ${name}` : name;
-  }, [route.path, rootName, edit, dirty]);
+  }, [route.path, config?.root_name, edit, dirty]);
 
   const setDirty = useCallback((d: boolean) => {
     dirtyRef.current = d;
