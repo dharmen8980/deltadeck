@@ -54,8 +54,8 @@ What it does:
   print stylesheet for markdown.
 - Resizable panels: drag (or use the arrow keys on) the edge of the file sidebar
   and of the contents / outline panel; double-click resets. A **Reading width**
-  menu (Narrow, Default, Wide, Full width) sets the markdown and `.docx` column.
-  Both are remembered; see [Layout](docs/layout.md).
+  menu (Narrow, Medium, Wide, Full width; Full is the default) sets the markdown
+  and `.docx` column. Both are remembered; see [Layout](docs/layout.md).
 - **Download PDF** for markdown, `.mmd` and `.docx` files: a properly paginated PDF
   rendered by headless Google Chrome on the server (see [PDF export](docs/pdf-export.md)).
 - Opt-in editing (`--allow-edit`): a CodeMirror editor with live preview, file

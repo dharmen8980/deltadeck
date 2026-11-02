@@ -9,7 +9,7 @@ import rehypeSlug from "rehype-slug";
 import { CheckIcon, CopyIcon, ImageOffIcon, LinkIcon, ShieldOffIcon } from "lucide-react";
 import { useFileChange } from "@/components/changes/changes-context";
 import { useFindSource } from "@/components/find/use-find-source";
-import { TocInline, TocPanel, type TocHeading } from "@/components/toc";
+import { TOC_DOCKED_CLASS, TocInline, TocPanel, type TocHeading } from "@/components/toc";
 import { useHighlight } from "@/hooks/use-highlight";
 import { useRoute } from "@/hooks/use-route";
 import { api, errorMessage, rawUrl } from "@/lib/api";
@@ -430,14 +430,16 @@ export function MarkdownViewer({ file, reloadKey }: ViewerProps) {
   }
 
   return (
-    <div className="flex justify-center gap-8 px-4 py-6 md:px-8">
-      <div className="print-area min-w-0 max-w-[var(--reading-width,56rem)] flex-1">
-        <TocInline headings={headings} words={words} onSelect={selectHeading} />
-        <article ref={articleRef} className={ARTICLE_CLASS}>
-          <MarkdownMarkup text={data.text} components={components} marks={marks} />
-        </article>
+    <div className="flex gap-2">
+      <div className="min-w-0 flex-1 px-4 pt-3 pb-6">
+        <div className="print-area max-w-[var(--reading-width,none)]">
+          <TocInline headings={headings} words={words} onSelect={selectHeading} />
+          <article ref={articleRef} className={ARTICLE_CLASS}>
+            <MarkdownMarkup text={data.text} components={components} marks={marks} />
+          </article>
+        </div>
       </div>
-      <TocPanel headings={headings} words={words} onSelect={selectHeading} />
+      <TocPanel headings={headings} words={words} onSelect={selectHeading} className={TOC_DOCKED_CLASS} />
     </div>
   );
 }

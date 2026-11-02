@@ -5,6 +5,7 @@ import {
   clampWidth,
   parseReadingWidth,
   parseWidth,
+  READING_DEFAULT,
   READING_WIDTH_KEY,
   type PanelSpec,
   type ReadingWidth,
@@ -69,10 +70,10 @@ export function usePanelWidth(spec: PanelSpec, reserved = 0): number {
   return clampWidth(saved ?? spec.def, spec, viewport, reserved);
 }
 
-const readingStore = createPref<ReadingWidth>(READING_WIDTH_KEY, parseReadingWidth, (v) => (v === "default" ? null : v));
+const readingStore = createPref<ReadingWidth>(READING_WIDTH_KEY, parseReadingWidth, (v) => (v === READING_DEFAULT ? null : v));
 
 export function useReadingWidth(): ReadingWidth {
-  return usePref(readingStore, "default");
+  return usePref(readingStore, READING_DEFAULT);
 }
 
 export function setReadingWidth(v: ReadingWidth) {

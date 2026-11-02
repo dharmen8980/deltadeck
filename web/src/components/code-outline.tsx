@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { TocInline, TocPanel, type TocHeading } from "@/components/toc";
+import { TOC_DOCKED_CLASS, TocInline, TocPanel, type TocHeading } from "@/components/toc";
 import { useRoute } from "@/hooks/use-route";
 import { api, type FileInfo } from "@/lib/api";
 import { isTypingTarget } from "@/lib/keys";
@@ -257,7 +257,7 @@ export function CodeWithOutline({
         filterFrom={16}
         collapsible
         changed={changedIds}
-        className="top-16 max-h-[calc(100svh-4.5rem)] border-l pt-3 pr-2 pl-1"
+        className={TOC_DOCKED_CLASS}
       />
     </div>
   );

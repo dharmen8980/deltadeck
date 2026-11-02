@@ -7,7 +7,7 @@ import { toJsxRuntime, type Components as JsxComponents } from "hast-util-to-jsx
 import { DownloadIcon, ImageOffIcon } from "lucide-react";
 import { useFileChange } from "@/components/changes/changes-context";
 import { useFindSource } from "@/components/find/use-find-source";
-import { TocInline, TocPanel, type TocHeading } from "@/components/toc";
+import { TOC_DOCKED_CLASS, TocInline, TocPanel, type TocHeading } from "@/components/toc";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { useHighlight } from "@/hooks/use-highlight";
@@ -183,15 +183,17 @@ export function DocxViewer({ file, reloadKey }: ViewerProps) {
   }
 
   return (
-    <div className="flex justify-center gap-8 px-4 py-6 md:px-8">
-      <div className="print-area min-w-0 max-w-[var(--reading-width,56rem)] flex-1">
-        <Notes data={data} file={file} />
-        <TocInline headings={headings} words={words} onSelect={selectHeading} />
-        <article ref={articleRef} className={ARTICLE_CLASS}>
-          <DocxMarkup data={data} components={components} marks={marks} />
-        </article>
+    <div className="flex gap-2">
+      <div className="min-w-0 flex-1 px-4 pt-3 pb-6">
+        <div className="print-area max-w-[var(--reading-width,none)]">
+          <Notes data={data} file={file} />
+          <TocInline headings={headings} words={words} onSelect={selectHeading} />
+          <article ref={articleRef} className={ARTICLE_CLASS}>
+            <DocxMarkup data={data} components={components} marks={marks} />
+          </article>
+        </div>
       </div>
-      <TocPanel headings={headings} words={words} onSelect={selectHeading} />
+      <TocPanel headings={headings} words={words} onSelect={selectHeading} className={TOC_DOCKED_CLASS} />
     </div>
   );
 }

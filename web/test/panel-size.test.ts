@@ -85,8 +85,9 @@ test("saved widths: integers inside the spec, anything else is the default", () 
 test("reading width prefs", () => {
   assert.equal(parseReadingWidth("wide"), "wide");
   assert.equal(parseReadingWidth("full"), "full");
-  assert.equal(parseReadingWidth("huge"), "default");
-  assert.equal(parseReadingWidth(null), "default");
+  assert.equal(parseReadingWidth("huge"), "full");
+  assert.equal(parseReadingWidth("default"), "default");
+  assert.equal(parseReadingWidth(null), "full");
   assert.equal(READING_MAX.default, "56rem");
   assert.equal(READING_MAX.full, "none");
 });

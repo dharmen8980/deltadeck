@@ -93,6 +93,8 @@ export function dragWidth(
 export const READING_WIDTHS = ["narrow", "default", "wide", "full"] as const;
 export type ReadingWidth = (typeof READING_WIDTHS)[number];
 export const READING_WIDTH_KEY = "viewer.readingWidth";
+/** The reading width when none is saved. */
+export const READING_DEFAULT: ReadingWidth = "full";
 
 /** CSS max-width of the document column of markdown and Word files. */
 export const READING_MAX: Record<ReadingWidth, string> = {
@@ -104,11 +106,11 @@ export const READING_MAX: Record<ReadingWidth, string> = {
 
 export const READING_LABELS: Record<ReadingWidth, string> = {
   narrow: "Narrow",
-  default: "Default",
+  default: "Medium",
   wide: "Wide",
   full: "Full width",
 };
 
 export function parseReadingWidth(raw: string | null | undefined): ReadingWidth {
-  return (READING_WIDTHS as readonly string[]).includes(raw ?? "") ? (raw as ReadingWidth) : "default";
+  return (READING_WIDTHS as readonly string[]).includes(raw ?? "") ? (raw as ReadingWidth) : READING_DEFAULT;
 }

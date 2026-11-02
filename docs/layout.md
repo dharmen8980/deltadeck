@@ -27,9 +27,16 @@ dragging their inner edge. The cursor changes on the edge.
 ## Reading width
 
 The **Reading width** button in the header of a markdown or `.docx` file sets
-the maximum width of the text column: Narrow (42rem), Default (56rem), Wide
-(72rem) or Full width. It applies to every document, not only the open one.
-The editor's preview keeps the default width.
+the maximum width of the text column: Narrow (42rem), Medium (56rem), Wide
+(72rem) or Full width (the default). It applies to every document, not only
+the open one. The editor's preview stays at 56rem.
+
+Documents are laid out like source code: the text starts at the left edge
+of the viewer, and the **On this page** panel is docked to the right edge
+(with a border, like the code **Outline**). With a width other than Full,
+the text stays on the left and the spare space sits between it and the
+panel. The panel scrolls on its own, with its scrollbar hidden like the
+file sidebar's.
 
 ## Where it is saved
 

@@ -281,6 +281,9 @@ interface TocProps extends ListOptions {
   className?: string;
 }
 
+/** Classes of the panel docked to the right edge of the viewer (code outline, document contents). */
+export const TOC_DOCKED_CLASS = "top-16 max-h-[calc(100svh-4.5rem)] border-l pt-3 pr-2 pl-1";
+
 /** Sticky side panel on wide screens. */
 export function TocPanel({
   headings,
@@ -333,7 +336,7 @@ export function TocPanel({
         scope="parent"
         reserved={tocReserved}
       />
-      <nav ref={navRef} aria-label={label} className="min-h-0 flex-1 overflow-y-auto pb-6">
+      <nav ref={navRef} aria-label={label} className="no-scrollbar min-h-0 flex-1 overflow-y-auto pb-6">
         <div className="mb-2 flex items-center gap-1.5 px-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
           <ListIcon className="size-3.5" /> {title}
           {words ? (
@@ -378,7 +381,7 @@ export function TocInline({
         <span className="text-muted-foreground">({headings.length})</span>
         {words ? <span className="ml-auto text-xs font-normal text-muted-foreground">{wordLabel(words)}</span> : null}
       </CollapsibleTrigger>
-      <CollapsibleContent className="max-h-80 overflow-y-auto border-t px-1 py-2">
+      <CollapsibleContent className="no-scrollbar max-h-80 overflow-y-auto border-t px-1 py-2">
         {filter ? (
           <div className="px-1">
             <FilterBox value={query} onChange={setQuery} label={`Filter ${title.toLowerCase()}`} />
