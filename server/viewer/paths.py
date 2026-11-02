@@ -33,6 +33,8 @@ for _kind, _exts in {
         EXT_KINDS[_e] = _kind
 
 PATH_MAX = 4096  # longest stored root-relative path check_rel accepts
+# never listed nor served in any mode (also when a user's ignore list lacks them)
+ALWAYS_HIDDEN = (".git", ".ldv-tmp-*")
 
 INLINE_MIME = {
     "png": "image/png", "jpg": "image/jpeg", "jpeg": "image/jpeg", "gif": "image/gif",
@@ -132,7 +134,7 @@ class PathGuard:
         self._listings = threading.local()  # see cached_listings
         # every deny and ignore pattern as one regex: the tree walker tests each name once
         # (same result as is_hidden: fnmatchcase is re.match of fnmatch.translate)
-        pats = tuple(self.deny) + tuple(self.ignore)
+        pats = tuple(self.deny) + tuple(self.ignore) + ALWAYS_HIDDEN
         self._hidden_rx = re.compile("|".join(f"(?:{fnmatch.translate(p)})" for p in pats)) if pats else None
 
     @contextlib.contextmanager
@@ -204,9 +206,36 @@ class PathGuard:
     def is_hidden(self, name: str) -> bool:
         return self.is_denied(name) or self.is_ignored(name)
 
+    def is_always_hidden(self, name: str) -> bool:
+        return self._match(name, ALWAYS_HIDDEN)
+
     def is_hidden_fast(self, name: str) -> bool:
         """is_hidden with one regex match (for the walker, which tests every name in the tree)."""
         return self._hidden_rx is not None and self._hidden_rx.match(fold(name)) is not None
+
+    def name_reason(self, name: str) -> str | None:
+        """Why a name is hidden: "always" (.git, .ldv-tmp-*), "deny", "ignore", or None."""
+        if not self.is_hidden_fast(name):
+            return None
+        if self.is_always_hidden(name):
+            return "always"
+        return "deny" if self.is_denied(name) else "ignore" if self.is_ignored(name) else None
+
+    def hidden_reason(self, rel: str) -> str | None:
+        """"deny" if any component of rel is denied, else "ignore" if one is ignored (or always
+        hidden), else None."""
+        reasons = {self.name_reason(c) for c in rel.split("/") if c and c not in (".", "..")}
+        return "deny" if "deny" in reasons else "ignore" if reasons - {None} else None
+
+    def _refused(self, allow: str):
+        """name -> refused, for resolve(allow=...)."""
+        if allow == "none":
+            return self.is_hidden
+        if allow == "ignored":
+            return lambda n: self.is_denied(n) or self.is_always_hidden(n)
+        if allow == "denied":
+            return self.is_always_hidden
+        raise ValueError(allow)
 
     def rel_hidden(self, rel: str) -> bool:
         """True if any component of a root-relative POSIX path is denied/ignored."""
@@ -256,14 +285,21 @@ class PathGuard:
         return "" if rel == "." else rel.replace(os.sep, "/")
 
     # --- the gate ---------------------------------------------------------
-    def resolve(self, rel: str | None) -> Resolved:
+    def resolve(self, rel: str | None, allow: str = "none") -> Resolved:
+        """allow: "none" refuses denied and ignored names, "ignored" lets ignored names through,
+        "denied" denied ones too (the read-only reveal); always-hidden names are refused in every mode."""
+        refused = self._refused(allow)
+
+        def rel_refused(p: str) -> bool:
+            return any(refused(c) for c in p.split("/") if c and c not in (".", ".."))
+
         if rel is None or rel.strip() == "":
             raise PathError(400, "path is required")
         if "\0" in rel:
             raise PathError(400, "invalid path")
         if rel.startswith("/") or rel.startswith("\\") or os.path.isabs(rel):
             raise PathError(403, "absolute paths are not allowed")
-        if self.rel_hidden(rel):
+        if rel_refused(rel):
             raise PathError(403, "path is not allowed")
         norm = posixpath.normpath(rel)
         if norm == "." or norm == ".." or norm.startswith("../"):
@@ -274,7 +310,7 @@ class PathGuard:
             raise PathError(403, "path is outside the root")
         if self.excluded and (self.is_excluded(joined) or self.is_excluded(real)):
             raise PathError(403, "path is not allowed")
-        if self.rel_hidden(self.rel_of(real)):
+        if rel_refused(self.rel_of(real)):
             raise PathError(403, "path is not allowed")
         # Never go through a symlinked directory (the walker never descends them).
         parent = os.path.dirname(joined)
@@ -284,16 +320,17 @@ class PathGuard:
             raise PathError(404, "not found")
         # Check the names exactly as they exist on disk (requested path and resolved target).
         names = self.disk_names(norm)
-        if names is None or any(self.is_hidden(n) for n in names):
+        if names is None or any(refused(n) for n in names):
             raise PathError(403, "path is not allowed")
-        if self.disk_hidden(self.rel_of(real)):
+        real_names = self.disk_names(self.rel_of(real))
+        if real_names is None or any(refused(n) for n in real_names):
             raise PathError(403, "path is not allowed")
         canon = "/".join(names)
         joined = os.path.join(self.root, *names)
         return Resolved(rel=canon, abs=joined, real=real)
 
-    def resolve_file(self, rel: str | None) -> tuple[Resolved, os.stat_result]:
-        r = self.resolve(rel)
+    def resolve_file(self, rel: str | None, allow: str = "none") -> tuple[Resolved, os.stat_result]:
+        r = self.resolve(rel, allow)
         try:
             st = os.stat(r.real)
         except OSError:

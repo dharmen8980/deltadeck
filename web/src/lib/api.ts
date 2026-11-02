@@ -46,7 +46,12 @@ export interface AppConfig {
   upload_max_bytes?: number;
   /** largest file the editor opens and saves (absent on older servers: EDIT_MAX_BYTES) */
   edit_max_bytes?: number;
+  /** protected (deny-list) files can be shown read-only on request (false with --no-reveal) */
+  reveal_enabled?: boolean;
 }
+
+/** Why a file or folder is hidden: git ignores it, the viewer's ignore list, or the deny list. */
+export type HiddenReason = "git" | "ignore" | "deny";
 
 export interface FileEntry {
   path: string;
@@ -55,12 +60,35 @@ export interface FileEntry {
   mtime: number;
   kind: FileKind;
   ext: string;
+  /** only on rows built from hidden entries */
+  hidden?: HiddenReason;
+}
+
+/** A hidden file or folder (/api/tree?hidden=1, /api/hidden). Folders are listed when opened. */
+export interface HiddenEntry {
+  path: string;
+  name: string;
+  dir: boolean;
+  reason: HiddenReason;
+  kind?: FileKind;
+  ext?: string;
+  size?: number;
+  mtime?: number;
 }
 
 export interface TreeResponse {
   files: FileEntry[];
   dirs: string[];
   version: number;
+  /** only with hidden=1: the topmost hidden children of visible folders */
+  hidden?: HiddenEntry[];
+}
+
+export interface HiddenListResponse {
+  path: string;
+  reason: HiddenReason;
+  entries: HiddenEntry[];
+  truncated: boolean;
 }
 
 export interface FileInfo extends FileEntry {
@@ -169,6 +197,8 @@ export interface ChangeEvent {
   deleted: string[];
   renames: { from: string; to: string }[];
   dirs_changed: boolean;
+  /** the set of hidden tree items changed */
+  hidden_changed?: boolean;
 }
 
 /** M modified, A added (staged, not in HEAD), D deleted, R renamed, ?? untracked, U conflict. */
@@ -342,10 +372,34 @@ export interface PdfOptions {
 export const pdfUrl = (path: string, o: PdfOptions) =>
   `/api/pdf${qs({ path, paper: o.paper, orientation: o.orientation, toc: o.toc ? 1 : 0 })}`;
 
+/** Paths last listed as protected (deny-list): opening one asks for its metadata with reveal
+ * straight away, instead of after a refused request. */
+const protectedPaths = new Set<string>();
+const noteHidden = (entries: HiddenEntry[] | undefined) => {
+  for (const e of entries ?? []) {
+    if (!e.dir && e.reason === "deny") protectedPaths.add(e.path);
+    else protectedPaths.delete(e.path);
+  }
+};
+export const isKnownProtected = (path: string) => protectedPaths.has(path);
+export const noteProtected = (path: string) => void protectedPaths.add(path);
+
 export const api = {
   config: (signal?: AbortSignal) => getJson<AppConfig>("/api/config", signal),
-  tree: (signal?: AbortSignal) => getJson<TreeResponse>("/api/tree", signal),
-  file: (path: string, signal?: AbortSignal) => getJson<FileInfo>(`/api/file${qs({ path })}`, signal),
+  tree: (signal?: AbortSignal, opts?: { hidden?: boolean }) =>
+    getJson<TreeResponse>(`/api/tree${qs({ hidden: opts?.hidden ? 1 : undefined })}`, signal).then((t) => {
+      noteHidden(t.hidden);
+      return t;
+    }),
+  /** the direct children of one hidden folder */
+  hidden: (path: string, signal?: AbortSignal) =>
+    getJson<HiddenListResponse>(`/api/hidden${qs({ path })}`, signal).then((r) => {
+      noteHidden(r.entries);
+      return r;
+    }),
+  /** reveal: metadata of a protected (deny-list) file, which is refused (403) without it */
+  file: (path: string, signal?: AbortSignal, opts?: { reveal?: boolean }) =>
+    getJson<FileInfo>(`/api/file${qs({ path, reveal: opts?.reveal ? 1 : undefined })}`, signal),
   content: (path: string, signal?: AbortSignal) =>
     getJson<ContentResponse>(`/api/content${qs({ path })}`, signal),
   textInitial: (path: string, signal?: AbortSignal) =>
@@ -354,6 +408,11 @@ export const api = {
     getJson<TextResponse>(`/api/text${qs({ path, start, length })}`, signal),
   textLine: (path: string, line: number, signal?: AbortSignal) =>
     getJson<TextResponse>(`/api/text${qs({ path, line })}`, signal),
+  /** a protected file's text, only after the user confirmed (read-only view) */
+  revealedText: (path: string, signal?: AbortSignal) =>
+    getJson<TextResponse>(`/api/text${qs({ path, reveal: 1 })}`, signal),
+  revealedTextRange: (path: string, start: number, length: number, signal?: AbortSignal) =>
+    getJson<TextResponse>(`/api/text${qs({ path, start, length, reveal: 1 })}`, signal),
   csv: (path: string, signal?: AbortSignal) => getJson<CsvResponse>(`/api/csv${qs({ path })}`, signal),
   xlsx: (path: string, signal?: AbortSignal) => getJson<XlsxResponse>(`/api/xlsx${qs({ path })}`, signal),
   docx: (path: string, signal?: AbortSignal) => getJson<DocxResponse>(`/api/docx${qs({ path })}`, signal),

@@ -19,6 +19,7 @@ import threading
 import time
 from dataclasses import dataclass, field
 
+from .hidden import SCOPED_MAX, GitIgnored, HiddenEntry
 from .paths import PathGuard, ext_of, fold, kind_of
 
 log = logging.getLogger("viewer.store")
@@ -89,14 +90,17 @@ class Change:
     deleted: list[str] = field(default_factory=list)
     renames: list[dict] = field(default_factory=list)
     dirs_changed: bool = False
+    hidden_changed: bool = False  # the hidden items of the tree (Show hidden files) changed
 
     def empty(self) -> bool:
-        return not (self.added or self.modified or self.deleted or self.renames or self.dirs_changed)
+        return not (self.added or self.modified or self.deleted or self.renames or self.dirs_changed
+                    or self.hidden_changed)
 
     def to_json(self) -> dict:
         return {
             "version": self.version, "added": self.added, "modified": self.modified,
             "deleted": self.deleted, "renames": self.renames, "dirs_changed": self.dirs_changed,
+            "hidden_changed": self.hidden_changed,
         }
 
 
@@ -139,11 +143,14 @@ STREAM_CLOSED = ("__closed__", None)  # queued by close_streams: the SSE generat
 
 
 class Store:
-    def __init__(self, guard: PathGuard):
+    def __init__(self, guard: PathGuard, ignored: GitIgnored | None = None):
         self.guard = guard
         self.root = guard.root
+        self.ignored = ignored  # what git ignores (None: no git awareness, as in tests)
         self.entries: dict[str, Entry] = {}
         self.dirs: set[str] = set()
+        # the topmost hidden items of visible directories (never walked): path -> HiddenEntry
+        self.hidden: dict[str, HiddenEntry] = {}
         self.version = 0
         self._state_lock = threading.Lock()
         self._scan_lock = threading.Lock()
@@ -158,10 +165,42 @@ class Store:
         self.on_subscribe = None  # callable: a live-update stream opened (the reconciler resumes)
 
     # --- reading ----------------------------------------------------------
-    def snapshot(self) -> dict:
+    def snapshot(self, hidden: bool = False, denied: bool = True) -> dict:
+        """The tree; hidden=True adds the hidden items ("deny" ones only if denied)."""
         with self._state_lock:
             files = [e.to_json() for _, e in sorted(self.entries.items())]
-            return {"files": files, "dirs": sorted(self.dirs), "version": self.version}
+            out = {"files": files, "dirs": sorted(self.dirs), "version": self.version}
+            if hidden:
+                out["hidden"] = [h.to_json() for _, h in sorted(self.hidden.items())
+                                 if denied or h.reason != "deny"]
+            return out
+
+    def rel_hidden(self, rel: str) -> bool:
+        """guard.rel_hidden, plus paths git ignores."""
+        return self.guard.rel_hidden(rel) or (self.ignored is not None and self.ignored.covers(rel))
+
+    def hidden_reason(self, rel: str) -> str | None:
+        """"deny", "ignore", "git" or None (visible)."""
+        r = self.guard.hidden_reason(rel)
+        if r is None and self.ignored is not None and self.ignored.covers(rel):
+            return "git"
+        return r
+
+    def in_hidden_dir(self, rel: str) -> bool:
+        """rel lies inside a hidden folder (events there are not processed)."""
+        parent = rel.rpartition("/")[0]
+        return bool(parent) and self.rel_hidden(parent)
+
+    def refresh_ignored(self) -> Change | None:
+        """Ask git again what it ignores; rescan the paths that became or stopped being ignored
+        (newly hidden files are reported deleted, newly visible ones added)."""
+        if self.ignored is None:
+            return None
+        with self._scan_lock:
+            changed = self.ignored.refresh()
+            if not changed:
+                return None
+            return self._apply_scopes_locked(minimal_scopes(changed), refreshed=True)
 
     def get(self, path: str) -> Entry | None:
         with self._state_lock:
@@ -185,15 +224,20 @@ class Store:
         return os.path.join(self.root, *rel.split("/")) if rel else self.root
 
     def _walk(self, start_abs: str, start_rel: str, files: dict, dirs: set, links: dict, sigs: dict,
-              pace=None, recursive: bool = True) -> None:
+              pace=None, recursive: bool = True, hidden_out: dict | None = None) -> None:
         """Everything visible below start_abs (start_rel: its root-relative path, '' for the root),
         with the visibility rules of PathGuard.walk: files -> Entry, dirs, in-root file symlinks ->
         target, and each listed directory's _dir_sig (taken before listing it, so a change made
         while listing shows next time). Entries whose size and mtime did not change are reused.
-        recursive=False: only start_abs's own entries (its subdirectories go to dirs, unlisted)."""
+        recursive=False: only start_abs's own entries (its subdirectories go to dirs, unlisted).
+        hidden_out: the hidden items met (HiddenEntry; never descended nor stat'ed)."""
         hidden = self.guard.is_hidden_fast
         guard = self.guard
         entries = self.entries
+        ig = self.ignored
+        gi = ig.contains if ig is not None and ig.paths else None
+        if hidden_out is None:
+            hidden_out = {}
         now = time.time_ns()
         stack = [(start_abs, start_rel)]
         while stack:
@@ -209,6 +253,14 @@ class Store:
                 for de in it:
                     name = de.name
                     if hidden(name):
+                        reason = guard.name_reason(name)
+                        if reason in ("deny", "ignore") and not de.is_symlink() and not (
+                                guard.excluded and guard.is_excluded(de.path)):
+                            self._hide(hidden_out, prefix + name, name, de, reason)
+                        continue
+                    if gi is not None and gi(prefix + name):
+                        if not de.is_symlink() and not (guard.excluded and guard.is_excluded(de.path)):
+                            self._hide(hidden_out, prefix + name, name, de, "git")
                         continue
                     try:
                         is_dir = de.is_dir()
@@ -244,6 +296,16 @@ class Store:
                         files[rel] = self._entry(rel, de.path, fst)
                     if pace is not None:
                         pace()
+
+    @staticmethod
+    def _hide(out: dict, rel: str, name: str, de, reason: str) -> None:
+        try:
+            is_dir = de.is_dir(follow_symlinks=False)
+            if not is_dir and not de.is_file(follow_symlinks=False):
+                return  # a fifo, socket or device
+        except OSError:
+            return
+        out[rel] = HiddenEntry(rel, name, is_dir, reason)
 
     def _spelling(self, rel: str, memo: dict) -> str | None:
         """How rel is spelled on disk: rel itself, a variant (case, Unicode normalisation) if only
@@ -286,17 +348,22 @@ class Store:
         return out
 
     def _scan_scope(self, scope: str, memo: dict | None = None):
-        """Current on-disk state under scope as (files, dirs, links, dir sigs), or None if the scope
-        must be ignored. A scope not spelled like its directory entry counts as gone. memo: shared
-        by the scopes of one batch (listings, parent checks)."""
+        """Current on-disk state under scope as (files, dirs, links, dir sigs, hidden items), or
+        None if the scope must be ignored (inside a hidden folder). A scope not spelled like its
+        directory entry counts as gone. A hidden scope yields only its own hidden item. memo:
+        shared by the scopes of one batch (listings, parent checks)."""
         files: dict[str, Entry] = {}
         dirs: set[str] = set()
         links: dict[str, str] = {}
         sigs: dict[str, tuple | None] = {}
+        hidden_out: dict[str, HiddenEntry] = {}
         if scope:
             memo = {} if memo is None else memo
             hidden = self.guard.is_hidden_fast
-            if any(hidden(c) for c in scope.split("/") if c and c not in (".", "..")):
+            parent_rel, _, name = scope.rpartition("/")
+            if any(hidden(c) for c in parent_rel.split("/") if c and c not in (".", "..")):
+                return None
+            if parent_rel and self.ignored is not None and self.ignored.covers(parent_rel):
                 return None
             abs_path = self._abs(scope)
             if self.guard.excluded and self.guard.is_excluded(abs_path):
@@ -308,20 +375,33 @@ class Store:
                 linked = memo[key] = os.path.lexists(parent) and os.path.realpath(parent) != parent
             if linked:
                 return None  # inside a symlinked dir: never descended
+            reason = self.guard.name_reason(name) if hidden(name) else None
+            if reason is None and self.ignored is not None and self.ignored.contains(scope):
+                reason = "git"
+            if reason == "always":
+                return None
             if self._spelling(scope, memo) != scope:
-                return files, dirs, links, sigs  # gone, or only a differently spelled entry exists
+                return files, dirs, links, sigs, hidden_out  # gone, or only a differently spelled entry exists
+            if reason is not None:
+                try:
+                    mode = os.lstat(abs_path).st_mode
+                except OSError:
+                    mode = 0
+                if stat_mod.S_ISDIR(mode) or stat_mod.S_ISREG(mode):  # not a symlink
+                    hidden_out[scope] = HiddenEntry(scope, name, stat_mod.S_ISDIR(mode), reason)
+                return files, dirs, links, sigs, hidden_out
             if os.path.isdir(abs_path) and not os.path.islink(abs_path):
                 dirs.add(scope)
-                self._walk(abs_path, scope, files, dirs, links, sigs)
+                self._walk(abs_path, scope, files, dirs, links, sigs, hidden_out=hidden_out)
             elif os.path.lexists(abs_path):
                 st = self.guard.file_ok(abs_path)
                 if st is not None:
                     files[scope] = self._entry(scope, abs_path, st)
                     if os.path.islink(abs_path):
                         links[scope] = self.guard.rel_of(os.path.realpath(abs_path))
-            return files, dirs, links, sigs
-        self._walk(self.root, "", files, dirs, links, sigs)
-        return files, dirs, links, sigs
+            return files, dirs, links, sigs, hidden_out
+        self._walk(self.root, "", files, dirs, links, sigs, hidden_out=hidden_out)
+        return files, dirs, links, sigs, hidden_out
 
     def apply_scopes(self, scopes, renames=None) -> Change | None:
         """Rescan the given root-relative scopes ('' = everything), commit, return the diff.
@@ -346,12 +426,32 @@ class Store:
             if d == "" or d in self.dirs:
                 self._dir_sigs[d] = sig
 
-    def _apply_scopes_locked(self, scopes, renames=None, sigs=None, listed=None) -> Change | None:
+    def _classify_new(self, scopes) -> None:
+        """Ask git about paths the tree has not seen yet, so a new ignored folder (a build's
+        output) is hidden before it is walked. A git failure just shows them."""
+        ig = self.ignored
+        if ig is None:
+            return
+        hidden = self.guard.is_hidden_fast
+        unknown = [s for s in scopes if s and s not in self.entries and s not in self.dirs
+                   and s not in self.hidden and not hidden(s.rpartition("/")[2]) and not self.in_hidden_dir(s)]
+        if not unknown:
+            return
+        if len(unknown) > SCOPED_MAX:
+            ig.refresh()
+        else:
+            ig.refresh_paths(minimal_scopes(unknown))
+
+    def _apply_scopes_locked(self, scopes, renames=None, sigs=None, listed=None,
+                             refreshed: bool = False) -> Change | None:
         """sigs: directory sigs to record as well (a directory pass's re-listed directories), also
-        when nothing changed. listed: (dirs, files, links) from a directory pass that listed those
-        directories' own entries (not their subdirectories): their direct files are replaced by
-        these, as if each had been a scope."""
+        when nothing changed. listed: (dirs, files, links, hidden) from a directory pass that listed
+        those directories' own entries (not their subdirectories): their direct files and hidden
+        items are replaced by these, as if each had been a scope. refreshed: git was just asked
+        about every path (refresh_ignored)."""
         scopes = list(scopes)
+        if not refreshed:
+            self._classify_new(scopes)
         memo: dict = {}
         shallow: set[str] = set(listed[0]) if listed else set()
         with self._state_lock:
@@ -366,6 +466,7 @@ class Store:
         new_dirs: set[str] = set()
         new_links: dict[str, str] = dict(listed[2]) if listed else {}
         new_sigs: dict[str, tuple | None] = {}
+        new_hidden: dict[str, HiddenEntry] = dict(listed[3]) if listed else {}
         used: list[str] = []
         checked: set[str] = set()
         for scope in scopes:
@@ -377,6 +478,7 @@ class Store:
             new_dirs |= res[1]
             new_links.update(res[2])
             new_sigs.update(res[3])
+            new_hidden.update(res[4])
             # make sure existing ancestor dirs are known (missed dir events)
             parent = posixpath.dirname(scope)
             while parent and parent not in checked:
@@ -402,7 +504,10 @@ class Store:
                 old_files = {s: self.entries[s] for s in used if s in self.entries}
                 old_dirs = set()
             ancestors = {d for d in new_dirs if not test(d)}
+            old_hidden = {p: h for p, h in self.hidden.items()
+                          if test(p) or (shallow and p.rpartition("/")[0] in shallow)}
             ch = Change()
+            ch.hidden_changed = old_hidden != new_hidden
             deleted = [p for p in old_files if p not in new_files]
             added = [p for p in new_files if p not in old_files]
             ch.modified = sorted(p for p in new_files if p in old_files and old_files[p].sig != new_files[p].sig)
@@ -468,6 +573,9 @@ class Store:
             if ch.empty():
                 self._commit_sigs({**new_sigs, **(sigs or {})})
                 return None
+            for p in old_hidden:
+                del self.hidden[p]
+            self.hidden.update(new_hidden)
             for p in old_files:
                 if p not in new_files:
                     del self.entries[p]
@@ -539,6 +647,7 @@ class Store:
         files: dict[str, Entry] = {}
         links: dict[str, str] = {}
         sigs: dict[str, tuple | None] = {}
+        hidden: dict[str, HiddenEntry] = {}
         for d in changed:
             dabs = self._abs(d)
             try:
@@ -549,14 +658,14 @@ class Store:
                 scopes.append(d)  # gone, replaced by a file or renamed (case only): rescan it whole
                 continue
             subdirs: set[str] = set()
-            self._walk(dabs, d, files, subdirs, links, sigs, recursive=False)
+            self._walk(dabs, d, files, subdirs, links, sigs, recursive=False, hidden_out=hidden)
             listed.append(d)
             scopes += subdirs ^ known_dirs.get(d, set())
         if not scopes and not listed:
             with self._state_lock:
                 self._commit_sigs(sigs)
             return None
-        return self._apply_scopes_locked(scopes, sigs=sigs, listed=(listed, files, links))
+        return self._apply_scopes_locked(scopes, sigs=sigs, listed=(listed, files, links, hidden))
 
     def sweep(self, pace=None) -> Change | None:
         """Full pass: walk and stat the whole tree without holding the scan lock (paced), then
@@ -567,8 +676,9 @@ class Store:
         dirs: set[str] = set()
         links: dict[str, str] = {}
         sigs: dict[str, tuple | None] = {}
+        hidden: dict[str, HiddenEntry] = {}
         try:
-            self._walk(self.root, "", files, dirs, links, sigs, pace=pace)
+            self._walk(self.root, "", files, dirs, links, sigs, pace=pace, hidden_out=hidden)
         except Cancelled:
             return None
         with self._state_lock:
@@ -578,6 +688,8 @@ class Store:
             cand += [d for d in dirs if d not in self.dirs]
             cand += [d for d in self.dirs if d not in dirs]
             cand += [p for p, t in links.items() if self._links.get(p) != t]
+            cand += [p for p, h in hidden.items() if self.hidden.get(p) != h]
+            cand += [p for p in self.hidden if p not in hidden]
         del files
         with self._scan_lock:
             if cand:
@@ -588,22 +700,20 @@ class Store:
 
     def scopes_for_paths(self, abs_paths) -> list[str]:
         """Map watcher-reported absolute paths to root-relative scopes."""
-        scopes: list[str] = []
-        for p in abs_paths:
-            p = os.path.normpath(p)
-            if not self.guard.inside(p):
-                # FSEvents may report a differently spelled prefix (/private/var vs /var)
-                parent = os.path.dirname(p)
-                alt = os.path.join(os.path.realpath(parent), os.path.basename(p)) if os.path.exists(parent) else p
-                if not self.guard.inside(alt):
-                    scopes.append("")  # unknown: fall back to a full rescan
-                    continue
-                p = alt
-            rel = self.guard.rel_of(p)
-            if rel.startswith(".."):
-                continue
-            scopes.append(rel)
-        return scopes
+        return [s for p in abs_paths if (s := self.scope_of(p)) is not None]
+
+    def scope_of(self, abs_path: str) -> str | None:
+        """The root-relative scope of one watcher-reported path ("" = unknown: rescan all)."""
+        p = os.path.normpath(abs_path)
+        if not self.guard.inside(p):
+            # FSEvents may report a differently spelled prefix (/private/var vs /var)
+            parent = os.path.dirname(p)
+            alt = os.path.join(os.path.realpath(parent), os.path.basename(p)) if os.path.exists(parent) else p
+            if not self.guard.inside(alt):
+                return ""  # unknown: fall back to a full rescan
+            p = alt
+        rel = self.guard.rel_of(p)
+        return None if rel.startswith("..") else rel
 
     # --- pub/sub ----------------------------------------------------------
     def bind_loop(self, loop: asyncio.AbstractEventLoop) -> None:

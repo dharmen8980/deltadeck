@@ -13,6 +13,9 @@ What it does:
 
 - A file tree with sorting by name or modified time, a filter box and a
   "Recently changed" list.
+- Files git ignores are hidden like the viewer's own ignore list. **Show
+  hidden files** lists them dimmed; protected files like `.env` open read-only
+  after a confirmation. See [Layout](docs/layout.md#hidden-files).
 - Viewers for each file type:
   - Markdown: GFM, a table of contents, mermaid diagrams, shiki highlighting,
     and relative links and images that resolve inside the folder.

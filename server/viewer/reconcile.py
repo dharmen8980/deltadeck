@@ -277,10 +277,12 @@ class Reconciler:
         fn = self.store.sweep if kind == "full" else self.store.quick_check
         pace = _pacer(cancel=self._cancel) if self.pace else _pacer(pause=0, cancel=self._cancel)
         t0 = time.monotonic()
-        if self._executor is not None:
-            ch = await asyncio.get_running_loop().run_in_executor(self._executor, fn, pace)
-        else:
-            ch = await asyncio.to_thread(fn, pace)
+        if getattr(self.store, "ignored", None) is not None:
+            # what git ignores, again: a .gitignore above the root, global excludes, git found late
+            ich = await self._in_worker(self.store.refresh_ignored)
+            if ich is not None:
+                await self.on_change(ich)
+        ch = await self._in_worker(fn, pace)
         now = self._mono()
         self.last_quick = now
         if kind == "full":
@@ -291,6 +293,11 @@ class Reconciler:
             log.info("%s pass (%s) found changes the watcher had not reported", kind, reason)
             await self.on_change(ch)
         return ch
+
+    async def _in_worker(self, fn, *args):
+        if self._executor is not None:
+            return await asyncio.get_running_loop().run_in_executor(self._executor, fn, *args)
+        return await asyncio.to_thread(fn, *args)
 
     def request_full_after_burst(self) -> None:
         """A large watcher batch: a full pass BIG_BATCH_FULL_DELAY_S later (later batches of the
@@ -323,6 +330,19 @@ class Reconciler:
 
 async def _apply_batch(store: Store, on_change, batch, reconciler: Reconciler | None) -> None:
     paths = [os.path.normpath(p) for _, p in batch]
+    ignored = getattr(store, "ignored", None)
+    if hasattr(store, "scope_of"):
+        # events inside hidden folders (node_modules, a build's output, .git): not processed, and
+        # a big build there does not count as a large batch; a .gitignore change asks git again
+        rels = [store.scope_of(p) for p in paths]
+        # (git never reads a .gitignore inside an ignored folder, so those are skipped)
+        if ignored is not None and any(r and ignored.is_rule_path(r)
+                                       and (r == ".git/info/exclude" or not store.in_hidden_dir(r)) for r in rels):
+            ch0 = await (reconciler._in_worker(store.refresh_ignored) if reconciler is not None
+                         else asyncio.to_thread(store.refresh_ignored))
+            if ch0 is not None:
+                await on_change(ch0)
+        paths = [p for p, r in zip(paths, rels) if not (r and store.in_hidden_dir(r))]
     if reconciler is not None:
         if len(paths) >= BIG_BATCH:  # where a busy watcher drops or coalesces events
             reconciler.request("quick", "large batch", delay=BIG_BATCH_DELAY_S)

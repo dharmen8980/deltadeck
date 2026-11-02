@@ -16,8 +16,9 @@ function go(e: React.MouseEvent, path: string, onOpen: (p: string) => void) {
 }
 
 export function FolderView({ node, sort, onOpen }: { node: DirNode; sort: SortMode; onOpen: (p: string) => void }) {
-  const dirs = sortDirs(node.dirs, sort);
-  const files = sortFiles(node.files, sort);
+  // Hidden items show (dimmed) in the sidebar only.
+  const dirs = sortDirs(node.dirs.filter((d) => !d.hidden), sort);
+  const files = sortFiles(node.files.filter((f) => !f.hidden), sort);
   return (
     <div className="mx-auto max-w-5xl p-4 md:p-6">
       <h1 className="mb-4 flex items-center gap-2 text-xl font-semibold">
@@ -108,7 +109,7 @@ export function HomeView({
       <section>
         <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-muted-foreground">Folders</h2>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          {sortDirs(root.dirs, "name").map((d) => (
+          {sortDirs(root.dirs.filter((d) => !d.hidden), "name").map((d) => (
             <a
               key={d.path}
               href={viewerHref(d.path)}
@@ -124,7 +125,7 @@ export function HomeView({
               </div>
             </a>
           ))}
-          {sortFiles(root.files, "name").map((f) => (
+          {sortFiles(root.files.filter((f) => !f.hidden), "name").map((f) => (
             <a
               key={f.path}
               href={viewerHref(f.path)}

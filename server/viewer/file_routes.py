@@ -5,6 +5,7 @@ by the app's handler (viewer.errors)."""
 from __future__ import annotations
 
 import hashlib
+import logging
 import os
 from urllib.parse import quote
 
@@ -18,51 +19,75 @@ from .paths import INLINE_MIME, PathGuard, ext_of, kind_of, mime_of
 from .pdf import ORIENTATIONS, PAPERS, PdfJob
 from .readers import CONTENT_MAX, read_content, read_csv, read_xlsx, text_chunks
 
+log = logging.getLogger("viewer")
+
 SVG_CSP = "sandbox; default-src 'none'; style-src 'unsafe-inline'; img-src data:"
 PDF_CSP = "default-src 'none'; object-src 'self'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'"
 
 
-def register_file_routes(app: FastAPI, settings: Settings, guard: PathGuard, pdf, repo_prefix: str) -> None:
+def register_file_routes(app: FastAPI, settings: Settings, guard: PathGuard, pdf, repo_prefix: str,
+                         store=None) -> None:
+    """Ignored and git-ignored files are readable by every route here. Denied files only by
+    /api/file, /api/content and /api/text, with reveal=1 on a same-site request while reveal is
+    enabled (read-only, no-store); every other route refuses them."""
     def get(path: str):
         return app.api_route(path, methods=["GET", "HEAD"])
 
-    def meta(rel, real, st):
+    def hidden_reason(rel: str) -> str | None:
+        return store.hidden_reason(rel) if store is not None else guard.hidden_reason(rel)
+
+    def gate(request: Request, path: str | None, reveal: str):
+        """(Resolved, stat, revealed): revealed when a denied file is shown on request."""
+        want = reveal in ("1", "true") and settings.allow_reveal and same_site_request(request)
+        r, st = guard.resolve_file(path, allow="denied" if want else "ignored")
+        revealed = want and "deny" in (guard.hidden_reason(r.rel), guard.hidden_reason(guard.rel_of(r.real)))
+        if revealed:
+            log.info("showing protected file %s on request", r.rel)
+        return r, st, revealed
+
+    def reply(body: dict, revealed: bool):
+        return JSONResponse(body, headers={"Cache-Control": "no-store"}) if revealed else body
+
+    def meta(rel, real, st, revealed=False):
         name = os.path.basename(rel)
         kind = kind_of(name, real)
-        return {"path": rel, "name": name, "size": st.st_size, "mtime": st.st_mtime_ns / 1e9,
-                "kind": kind, "ext": ext_of(name), "mime": mime_of(name, kind)}
+        out = {"path": rel, "name": name, "size": st.st_size, "mtime": st.st_mtime_ns / 1e9,
+               "kind": kind, "ext": ext_of(name), "mime": mime_of(name, kind)}
+        if (h := "deny" if revealed else hidden_reason(rel)) is not None:
+            out["hidden"] = h
+        return out
 
     @get("/api/file")
-    def api_file(path: str | None = None):
-        r, st = guard.resolve_file(path)
-        return meta(r.rel, r.real, st)
+    def api_file(request: Request, path: str | None = None, reveal: str = "0"):
+        r, st, revealed = gate(request, path, reveal)
+        return reply(meta(r.rel, r.real, st, revealed), revealed)
 
     @get("/api/content")
-    def api_content(path: str | None = None):
-        r, st = guard.resolve_file(path)
+    def api_content(request: Request, path: str | None = None, reveal: str = "0"):
+        r, st, revealed = gate(request, path, reveal)
         if st.st_size > CONTENT_MAX:
             return JSONResponse({"detail": "file too large for full content; use /api/text",
                                  "size": st.st_size}, status_code=413)
         data, text = read_content(r.real)
         if text is None:
             return JSONResponse({"detail": "file too large", "size": len(data)}, status_code=413)
-        return {"path": r.rel, "text": text,
-                "size": len(data), "truncated": False, "sha256": hashlib.sha256(data).hexdigest(),
-                "mtime": st.st_mtime_ns / 1e9}
+        return reply({"path": r.rel, "text": text,
+                      "size": len(data), "truncated": False, "sha256": hashlib.sha256(data).hexdigest(),
+                      "mtime": st.st_mtime_ns / 1e9}, revealed)
 
     @get("/api/text")
-    def api_text(path: str | None = None, start: int | None = Query(None, ge=0),
-                 length: int | None = Query(None, ge=0), line: int | None = Query(None, ge=1)):
-        r, st = guard.resolve_file(path)
+    def api_text(request: Request, path: str | None = None, start: int | None = Query(None, ge=0),
+                 length: int | None = Query(None, ge=0), line: int | None = Query(None, ge=1), reveal: str = "0"):
+        r, st, revealed = gate(request, path, reveal)
         res = text_chunks(r.real, st.st_size, start=start, length=length, line=line)
         out = {"path": r.rel, **res}
         if line is not None:
             out["line"] = line
-        return out
+        return reply(out, revealed)
 
     @get("/api/raw")
     def api_raw(path: str | None = None):
-        r, st = guard.resolve_file(path)
+        r, st = guard.resolve_file(path, allow="ignored")
         name = os.path.basename(r.rel)
         ext = ext_of(name)
         headers = {"X-Content-Type-Options": "nosniff", "Cache-Control": "no-cache"}
@@ -78,7 +103,7 @@ def register_file_routes(app: FastAPI, settings: Settings, guard: PathGuard, pdf
 
     @get("/api/csv")
     def api_csv(path: str | None = None):
-        r, st = guard.resolve_file(path)
+        r, st = guard.resolve_file(path, allow="ignored")
         ext = ext_of(r.rel)
         if ext not in ("csv", "tsv"):
             return JSONResponse({"detail": "not a csv/tsv file"}, status_code=400)
@@ -86,7 +111,7 @@ def register_file_routes(app: FastAPI, settings: Settings, guard: PathGuard, pdf
 
     @get("/api/xlsx")
     def api_xlsx(path: str | None = None):
-        r, st = guard.resolve_file(path)
+        r, st = guard.resolve_file(path, allow="ignored")
         if ext_of(r.rel) != "xlsx":
             return JSONResponse({"detail": "not an xlsx file"}, status_code=400)
         try:
@@ -98,7 +123,7 @@ def register_file_routes(app: FastAPI, settings: Settings, guard: PathGuard, pdf
     def api_docx(path: str | None = None, fmt: str = Query("html", alias="format")):
         """A .docx converted once (cached): sanitized HTML for display plus markdown (search, change
         tracking). format=markdown skips the HTML and the images (the change tracker's fetch)."""
-        r, st = guard.resolve_file(path)
+        r, st = guard.resolve_file(path, allow="ignored")
         if ext_of(r.rel) != "docx":
             return JSONResponse({"detail": "not a .docx file"}, status_code=400)
         if fmt not in ("html", "markdown"):
@@ -129,7 +154,7 @@ def register_file_routes(app: FastAPI, settings: Settings, guard: PathGuard, pdf
         # some web page pointing here). The response is unreadable cross-origin anyway.
         if not same_site_request(request):
             return JSONResponse({"detail": "cross-site PDF export requests are refused"}, status_code=403)
-        r, st = guard.resolve_file(path)
+        r, st = guard.resolve_file(path, allow="ignored")
         name = os.path.basename(r.rel)
         kind = kind_of(name, r.real)
         if kind not in ("markdown", "mermaid", "docx"):

@@ -31,3 +31,4 @@ You can type a one-line note for each item, remove items, or **Clear** them all 
 
 - The basket lives in memory for the tab only. Nothing is saved to disk or sent to the server, so a reload empties it. It works the same in the browser and the desktop app, and in read-only and edit mode.
 - JSON files are not covered, because their pretty-printed view uses a different diff. When **Since last commit** is on, the highlights and the basket follow the git comparison. Blame mode has no basket, and while the banner's **Show changes** diff is open, use **Add all** or close the diff to pick single changes.
+- Hidden files (git-ignored, on the ignore list, or protected; see [Layout](layout.md#hidden-files)) have no change highlights, so they cannot go in the basket.

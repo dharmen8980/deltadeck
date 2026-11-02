@@ -21,6 +21,7 @@ from .events import register_event_routes
 from .file_routes import PDF_CSP, SVG_CSP, register_file_routes  # noqa: F401 - CSPs re-exported
 from .git import GitLink
 from .git_routes import register_git_routes
+from .hidden import GitIgnored, list_hidden_dir
 from .http_common import (  # noqa: F401 - prefixes and path tests re-exported for older imports
     ALLOWED_HOSTS,
     ROOTS_PREFIX,
@@ -130,7 +131,8 @@ def config_payload(settings: Settings, *, root_present: bool, editor: Editor | N
             "ignore_patterns": list(settings.ignore), "upload_ext": list(settings.upload_ext),
             "upload_max_bytes": settings.upload_max_bytes, "edit_max_bytes": settings.edit_max_bytes,
             "upload_max_files": MAX_UPLOAD_FILES, "root_path": root, "no_root": not root_present,
-            "root_switch_enabled": False, "git_enabled": git_enabled, "desktop": settings.desktop}
+            "root_switch_enabled": False, "git_enabled": git_enabled, "desktop": settings.desktop,
+            "reveal_enabled": settings.allow_reveal}
 
 
 def mount_ui(app: FastAPI, ui_dir: str) -> None:
@@ -181,12 +183,13 @@ def create_app(settings: Settings) -> FastAPI:
         raise ValueError("create_app needs a root (RootSwitcher serves the no-folder mode)")
     settings.validate()  # ConfigError: data dir overlaps the root while editing is enabled
     guard = PathGuard(settings)
-    store = Store(guard)
+    git = GitLink(settings, guard)  # detected on first use (off: not a repo, no git, --git off)
+    ignored = GitIgnored(git.repo, guard)
+    store = Store(guard, ignored)
     editor = Editor(settings, guard, store) if settings.allow_edit else None
     index = SearchIndex(store, settings.search_max_bytes, index_dir=search_index_dir(settings),
                         max_files=settings.search_max_files, max_total_bytes=settings.search_max_total_bytes)
     repo_prefix = find_repo_prefix(settings.root)
-    git = GitLink(settings, guard)  # detected on first use (off: not a repo, no git, --git off)
     pdf = make_pdf_renderer(settings)
     closing = asyncio.Event()  # set on lifespan shutdown: ends this app's SSE streams (root switch)
 
@@ -203,6 +206,7 @@ def create_app(settings: Settings) -> FastAPI:
     @contextlib.asynccontextmanager
     async def lifespan(app: FastAPI):
         store.bind_loop(asyncio.get_running_loop())
+        await asyncio.to_thread(ignored.refresh)  # failing: shown as before, asked again at the next pass
         await asyncio.to_thread(store.full_scan)
         reconciler.reset()
         index.start_background_build()
@@ -257,10 +261,15 @@ def create_app(settings: Settings) -> FastAPI:
         return JSONResponse(out, headers={"Cache-Control": "no-store"})
 
     @get("/api/tree")
-    def api_tree():
-        return store.snapshot()
+    def api_tree(hidden: str = "0"):
+        return store.snapshot(hidden=hidden in ("1", "true"), denied=settings.allow_reveal)
 
-    register_file_routes(app, settings, guard, pdf, repo_prefix)
+    @get("/api/hidden")
+    def api_hidden(path: str | None = None):
+        """The children of one hidden folder, listed when it is expanded (Show hidden files)."""
+        return list_hidden_dir(store, guard, path, include_denied=settings.allow_reveal)
+
+    register_file_routes(app, settings, guard, pdf, repo_prefix, store)
 
     @get("/api/search")
     def api_search(q: str = "", folder: str = "", types: str = "", limit: int = 50):

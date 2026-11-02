@@ -192,6 +192,13 @@
     viewer's ignore list is applied, so a huge untracked tree that git does not
     ignore can make the Uncommitted list slow, time out (20 s) or exceed the
     32 MB output cap (413). Add it to `.gitignore` or `--ignore` it.
+  - Hidden files (see [Hidden files](configuration.md#hidden-files)): an open
+    hidden file does not reload live. Rules from a `.gitignore` above the
+    folder and the global excludes file apply at the next backstop pass.
+    Nested repositories' own ignore rules are not applied. A folder that git
+    reports as ignored as a whole stays hidden until git is asked again.
+    Opening an ignored folder as the root hides nothing by git. When git is
+    slow or fails, git-ignored files show as before until the next try.
 - Folders that contain only hidden symlinks still appear as empty folders.
 - macOS and Linux only: the write path relies on POSIX `dir_fd`/`O_NOFOLLOW`
   file operations, so native Windows is not supported (WSL should work).

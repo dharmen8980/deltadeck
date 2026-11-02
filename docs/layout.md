@@ -38,8 +38,32 @@ the text stays on the left and the spare space sits between it and the
 panel. The panel scrolls on its own, with its scrollbar hidden like the
 file sidebar's.
 
+## Hidden files
+
+When the folder is inside a git repository, files and folders that git
+ignores are left out of the sidebar, search and What's new. Files git tracks
+stay visible even if an ignore pattern matches them. The viewer's own ignore
+list (`node_modules`, `.venv`, `__pycache__`, ...) and protected files
+(`.env`, `*.pem`, `*token*`, ...) are left out too.
+
+**Show hidden files** in the sidebar's filter menu lists them, dimmed:
+
+- Hover a row to see why it is hidden: ignored by git, on the viewer's ignore
+  list, or protected. Protected files have a lock icon.
+- A hidden folder is listed when you open it, so a big `node_modules` costs
+  nothing until then.
+- Hidden files open like any other file, with a short note above them. They
+  have no change highlights and cannot go in the review basket. Files on the
+  ignore list are read-only; git-ignored files can be edited as before.
+- A protected file first asks you to confirm, because it may contain secrets.
+  It is then shown as read-only text, without download, PDF or copy for AI.
+  The answer is kept for the tab's session only.
+- Hidden items are not shown while a file type or **Changed since viewed**
+  filter is on.
+
 ## Where it is saved
 
 In the browser's `localStorage` (the desktop app has its own), under
-`viewer.sidebarWidth`, `viewer.tocWidth` and `viewer.readingWidth`. A default
-value removes the key. Nothing is stored on the server.
+`viewer.sidebarWidth`, `viewer.tocWidth`, `viewer.readingWidth` and
+`viewer.showHidden`. A default value removes the key. Nothing is stored on the
+server.

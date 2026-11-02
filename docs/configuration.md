@@ -17,7 +17,8 @@ it still exists) and otherwise starts with no folder selected.
 | Host | none | none | always `127.0.0.1` (hardcoded, not configurable) |
 | Deny patterns (add) | `--deny PATTERN` (repeatable) | `DOCS_VIEWER_DENY` (comma-separated) | `.env`, `.env*`, `*token*`, `*secret*`, `*credential*`, `*.pem`, `*.key` |
 | Drop default deny list | `--no-default-deny` | none | off |
-| Ignore patterns (add) | `--ignore PATTERN` (repeatable) | `DOCS_VIEWER_IGNORE` (comma-separated) | `__pycache__`, `*.pyc`, `.DS_Store`, `node_modules`, `.venv`, `.git` |
+| Never show denied files | `--no-reveal` | `DOCS_VIEWER_NO_REVEAL=1` | off: a denied file can be shown read-only on request; see [Hidden files](#hidden-files) |
+| Ignore patterns (add) | `--ignore PATTERN` (repeatable) | `DOCS_VIEWER_IGNORE` (comma-separated) | `__pycache__`, `*.pyc`, `.DS_Store`, `node_modules`, `.venv`, `.git`, `.ldv-tmp-*` |
 | Search size limit | `--search-max-mb N` | `DOCS_VIEWER_SEARCH_MAX_MB` | `2` (larger files are not indexed for content search) |
 | Search: files indexed in all | `--search-max-files N` | `DOCS_VIEWER_SEARCH_MAX_FILES` | `100000` (see [Search index](#search-index)) |
 | Search: total size indexed | `--search-max-total-mb N` | `DOCS_VIEWER_SEARCH_MAX_TOTAL_MB` | `2048` (the indexed files' sizes added up; a `.docx` counts its file size) |
@@ -38,8 +39,9 @@ patterns are compared after Unicode NFKC normalisation and case folding (so
 NFD spellings and look-alikes such as U+017F `ſ` for `s` match too, as they do
 on APFS). They are checked against every path component, both of the requested
 path and of its realpath-resolved form, and against the names as they actually
-exist on disk (each component is matched to its real directory entry). A denied path is refused with 403. An ignored path is
-just hidden noise.
+exist on disk (each component is matched to its real directory entry). A denied path is refused with 403, except for the
+read-only view described below. An ignored path is just hidden noise: it is not
+listed, searched or tracked, but it opens when asked for by path.
 
 Example:
 
@@ -49,6 +51,32 @@ uv run viewer --root ~/notes --port 9000 --deny '*.sqlite' --ignore 'dist'
 
 `.ldv-tmp-*` (the editor's temporary files during an atomic save) is on the
 default ignore list, so it never shows in the tree or search.
+
+## Hidden files
+
+Three kinds of items are hidden from the tree, search, What's new and change
+events:
+
+- **Git-ignored.** When the folder is inside a git repository, files and
+  folders git ignores (`.gitignore`, `.git/info/exclude`, the global excludes
+  file) are hidden like ignored ones. Files git tracks stay visible, even when
+  an ignore pattern matches them. Outside a repository, or with `--git off`,
+  nothing is hidden this way.
+- **Ignored.** Names on the ignore list.
+- **Denied.** Names on the deny list. These are protected.
+
+With "Show hidden files" in the sidebar filter menu, hidden items show in the
+tree, dimmed. Hidden folders are never scanned, and changes inside them are
+ignored; their contents are listed when you expand them. Hidden files open with
+a note that they are hidden. Git-ignored files open normally; ignore-list files
+open read-only. A denied file asks first and then shows read-only.
+`--no-reveal` turns that off, and denied names are then not listed either.
+
+`.git`, `.ldv-tmp-*` and the data dir are never shown.
+
+A change to a `.gitignore` in the folder applies at the next watcher event.
+Rules from elsewhere (a `.gitignore` above the folder, global excludes) apply
+at the next backstop pass.
 
 ## Change detection
 

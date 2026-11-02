@@ -1240,7 +1240,7 @@ class SearchIndex:
         lp = prefix.lower()
         if not lp or len(lp) > NAME_MAX:
             return empty
-        rel = check_rel(path, self.store.guard.rel_hidden) if path else None
+        rel = check_rel(path, self.store.rel_hidden) if path else None
         exts, d, top = ["\0"], "\0", "\0"  # nothing matches the placeholders (not even ext '')
         if rel is not None:
             ext = ext_of(rel.rsplit("/", 1)[-1])

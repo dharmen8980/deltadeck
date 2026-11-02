@@ -359,7 +359,7 @@ def register_seen_routes(app: FastAPI, db: SeenDB, current: Callable[[], object 
         return inner
 
     def hidden_of(inner):
-        return inner.app.state.store.guard.rel_hidden
+        return inner.app.state.store.rel_hidden  # also what git ignores
 
     def notify(inner, paths: list[str], client: str | None) -> None:
         if paths:
@@ -442,7 +442,7 @@ def register_seen_routes(app: FastAPI, db: SeenDB, current: Callable[[], object 
         if isinstance(inner, JSONResponse):
             return inner
         store = inner.app.state.store
-        hidden = store.guard.rel_hidden
+        hidden = store.rel_hidden
         # only files the tree shows (the walker applies every path rule)
         entries = list({e.path: (e.path, e.mtime, e.size) for e in b.entries
                         if check_rel(e.path, hidden) and store.get(e.path) is not None}.values())

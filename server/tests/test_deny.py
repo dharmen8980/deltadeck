@@ -39,13 +39,17 @@ def test_denied_refused_everywhere(root):
         paths = {f["path"] for f in tree["files"]}
         assert paths == {"ok.md"}, paths
         assert tree["dirs"] == [] or set(tree["dirs"]) <= {"sub"}
-        targets = list(DENIED) + ["sub/API_TOKEN.TXT", "innocent.md", "secrets", ".DS_Store",
-                                  "__pycache__/x.cpython-313.pyc", "mod.pyc", "SECRETS/plain.txt"]
+        targets = list(DENIED) + ["sub/API_TOKEN.TXT", "innocent.md", "secrets", "SECRETS/plain.txt"]
         for rel in targets:
             for ep in ("/api/file", "/api/content", "/api/text", "/api/raw", "/api/csv"):
                 r = c.get(ep, params={"path": rel})
                 assert r.status_code in (403, 404), (ep, rel, r.status_code)
                 assert b"zqdeny" not in r.content
+        # ignore-list files are left out of the tree and search, but readable when opened
+        for rel in (".DS_Store", "__pycache__/x.cpython-313.pyc", "mod.pyc"):
+            for ep in ("/api/file", "/api/content", "/api/text", "/api/raw"):
+                assert c.get(ep, params={"path": rel}).status_code == 200, (ep, rel)
+            assert c.get("/api/file", params={"path": rel}).json()["hidden"] == "ignore"
         for w in WORDS:
             res = c.get("/api/search", params={"q": w}).json()
             assert res["content"] == [] and res["names"] == [], w

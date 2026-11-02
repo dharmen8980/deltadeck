@@ -17,7 +17,11 @@
   realpath, and requires the result to stay inside the root. It then applies the
   deny and ignore lists to both the requested and the resolved components.
   Outside the root or denied gives 403, missing gives 404. Denied files are
-  never listed, served or indexed.
+  never listed, served or indexed, except as described in [Hidden and
+  protected files](#hidden-and-protected-files). Ignored and git-ignored files
+  are readable when asked for by path, but never searched or tracked. They are
+  listed only with "Show hidden files". Ignore-list files are never edited;
+  git-ignored files stay editable when editing is on.
 - **Symlinks.** Symlinked folders are never descended into. A symlinked file is
   shown only if its target is inside the root and passes the deny list. The
   `runtime_workdir/` links that point into the repo (including `.env`) are
@@ -57,6 +61,29 @@
   CDN, and Next telemetry is disabled. FastAPI's OpenTelemetry hooks are
   switched off.
 
+## Hidden and protected files
+
+- **Denied files** are served only on an explicit read with `reveal=1`, and
+  only by `/api/file` (metadata), `/api/content` and `/api/text`. The request
+  must be same-site (the `Sec-Fetch-Site` and `Origin` checks used for
+  `/api/pdf`), and the response is `Cache-Control: no-store`. The loopback host
+  rules apply as everywhere. Each such read is logged.
+- **Never for denied files:** `/api/raw`, `/api/csv`, `/api/xlsx`,
+  `/api/docx`, `/api/pdf`, `/api/edit/*`, `/api/git/*`, `/api/seen/*` and
+  search. They keep their 403. Denied files are never indexed and never get a
+  seen history.
+- **`--no-reveal`** (`DOCS_VIEWER_NO_REVEAL=1`) turns this off: `reveal=1`
+  gets 403, and denied names are left out of the hidden-files listing too.
+  `/api/config` reports it as `reveal_enabled`.
+- **Listings.** `GET /api/tree?hidden=1` adds the topmost hidden items of
+  visible folders. `GET /api/hidden?path=` lists the direct children of one
+  hidden folder (at most 2000). Neither reads file contents. `.git`,
+  `.ldv-tmp-*`, the data dir and symlinked folders are never listed nor
+  served, whatever the mode.
+- **Ignored and git-ignored files** are readable by every read route without
+  a flag. Ignore-list paths stay refused by `/api/edit/*`; git-ignored files
+  stay editable when editing is on, as before.
+
 ## The /api/seen endpoints
 
 The history of [Changed since you last looked](changes.md) is stored by the
@@ -90,7 +117,7 @@ filter menu.
 - **Path checks.** Stored paths may no longer exist (deleted or renamed
   files), so every path is checked lexically: relative, normalised (no `..`,
   `.`, empty components, backslashes or NUL), and no component may match the
-  deny or ignore lists (403). Records whose names are denied later are not
+  deny or ignore lists, nor lie in what git ignores (403). Records whose names are denied later are not
   returned. `commit` also requires a regular, visible file
   (`PathGuard.resolve_file`), and `mark` only records files present in the
   tree. The files are never written by these endpoints. The only read is a
@@ -115,8 +142,8 @@ filter menu.
   path, size, mtime and extension and the FTS5 tokens of its text (lower-cased
   words without accents, with their positions). It is contentless, so the text
   itself is not stored, but the words of a file and their order can largely be
-  reconstructed from it: treat it like the files. Denied and ignored files are
-  never indexed. Tokens of a file that changes or is deleted are removed with
+  reconstructed from it: treat it like the files. Denied, ignored and
+  git-ignored files are never indexed. Tokens of a file that changes or is deleted are removed with
   it (on SQLite before 3.43 they are only unlinked and purged by a rebuild once
   the dead rows outnumber the live ones or their files add up to 64 MB and
   more than the live ones). The paths, sizes and mtimes of files whose
@@ -220,7 +247,9 @@ subcommands that read are used.
 - **The commands used.** `--version`, `rev-parse`, `symbolic-ref`,
   `config --list`, `status --porcelain=v2 -z --untracked-files=all
   --ignore-submodules=all`, `diff-index --numstat HEAD`, `ls-tree`,
-  `cat-file blob` and `blame --porcelain -L`. Nothing that writes refs, the
+  `cat-file blob`, `blame --porcelain -L` and, for the hidden files,
+  `--literal-pathspecs ls-files -z --others --ignored --exclude-standard
+  --directory` (10 s timeout; 5 s for new paths). Nothing that writes refs, the
   index, objects or the work tree (no checkout, so no smudge filters on
   checkout), and nothing that contacts a remote.
 - **Paths.** Requested paths go through `PathGuard.resolve_file` (a file

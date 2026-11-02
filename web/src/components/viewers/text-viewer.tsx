@@ -18,13 +18,13 @@ import { anchorsBetween, removedLabel, type LineMarks, type RemovedRun } from "@
 import { ViewerError, ViewerLoading, type ViewerProps } from "./common";
 
 const CHUNK = 256 * 1024;
-const MAX_CHUNK = 1024 * 1024; // server caps length at 1 MB
+export const MAX_CHUNK = 1024 * 1024; // server caps length at 1 MB
 /** Changes in unloaded lines: the chunks around this many are loaded right away (the rest on request). */
 const AUTO_CHANGE_LOADS = 4;
 /** Find in a file not all loaded reads this much of it (the bar says so when there is more). */
 const FIND_TEXT_MAX = 32 * 1024 * 1024;
 
-interface Seg extends TextSegment {
+export interface Seg extends TextSegment {
   lines: string[];
 }
 
@@ -37,7 +37,7 @@ function toSeg(s: TextSegment): Seg {
 }
 
 /** Merge segments by byte offset. Segment boundaries are always line boundaries. */
-function mergeSegments(existing: Seg[], incoming: TextSegment[]): Seg[] {
+export function mergeSegments(existing: Seg[], incoming: TextSegment[]): Seg[] {
   const all = [...existing, ...incoming.map(toSeg)].sort((a, b) => a.start - b.start);
   const out: Seg[] = [];
   for (const cur of all) {
@@ -58,7 +58,7 @@ function mergeSegments(existing: Seg[], incoming: TextSegment[]): Seg[] {
   return out;
 }
 
-function computeGaps(segs: Seg[], size: number): { start: number; end: number }[] {
+export function computeGaps(segs: Seg[], size: number): { start: number; end: number }[] {
   const gaps: { start: number; end: number }[] = [];
   let pos = 0;
   for (const s of segs) {

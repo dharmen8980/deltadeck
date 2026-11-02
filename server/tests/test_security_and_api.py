@@ -56,7 +56,8 @@ def test_ignore_list(tree):
     with running(tree, ignore=["sub"]) as c:
         t = c.get("/api/tree").json()
         assert "sub" not in t["dirs"]
-        assert c.get("/api/file?path=sub/keep.txt").status_code == 403
+        # ignored: not listed, but readable when opened (never editable)
+        assert c.get("/api/file?path=sub/keep.txt").json()["hidden"] == "ignore"
 
 
 def test_kinds_and_raw(tree):

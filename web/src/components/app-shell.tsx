@@ -32,6 +32,7 @@ import { READING_MAX, SIDEBAR_SPEC } from "@/lib/panel-size";
 import { Skeleton } from "@/components/ui/skeleton";
 import { FileHeader } from "@/components/file-header";
 import { FileTree } from "@/components/file-tree";
+import { HiddenNotice, ProtectedFileView } from "@/components/protected-file";
 import { FolderView, HomeView } from "@/components/folder-view";
 import { MenuFolderPick, NoRootView, reloadHome, RootSwitcher } from "@/components/root-switcher";
 import { SearchDialog, type SearchTarget } from "@/components/search-dialog";
@@ -51,7 +52,7 @@ import { useChangeTracker } from "@/hooks/use-change-tracker";
 import { useEvents } from "@/hooks/use-events";
 import { setNavigationGuard, useRoute } from "@/hooks/use-route";
 import { useTree } from "@/hooks/use-tree";
-import { api, ApiError, errorMessage, type AppConfig, type ChangeEvent, type FileInfo, type FileKind } from "@/lib/api";
+import { api, ApiError, errorMessage, isKnownProtected, noteProtected, type AppConfig, type ChangeEvent, type FileInfo, type FileKind } from "@/lib/api";
 import { CONTENT_MAX, remapPath, TEXT_KINDS } from "@/lib/change-rules";
 import { configureEditClient, editMaxBytes } from "@/lib/edit-api";
 import { isEditable } from "@/lib/editor-lang";
@@ -81,6 +82,7 @@ const kindsPref = createPref<FileKind[]>(
   (v) => JSON.stringify(v),
 );
 const changedOnlyPref = createPref<boolean>("viewer.changedOnly", (raw) => raw === "1", (on) => (on ? "1" : "0"));
+const showHiddenPref = createPref<boolean>("viewer.showHidden", (raw) => raw === "1", (on) => (on ? "1" : null));
 
 // The editor (and CodeMirror) is only downloaded when someone actually edits.
 const EditorPane = lazy(() => import("@/components/edit/editor-pane").then((m) => ({ default: m.EditorPane })));
@@ -99,6 +101,18 @@ const VIEWERS: Record<FileKind, React.ComponentType<ViewerProps>> = {
   binary: BinaryViewer,
 };
 
+/** A file's metadata; a protected file is refused (403) and, with reveal on, asked for again with reveal. */
+function loadFileInfo(path: string, reveal: boolean, signal?: AbortSignal): Promise<FileInfo> {
+  if (reveal && isKnownProtected(path)) return api.file(path, signal, { reveal: true });
+  return api.file(path, signal).catch((e: unknown) => {
+    if (!reveal || !(e instanceof ApiError) || e.status !== 403) throw e;
+    return api.file(path, signal, { reveal: true }).then((f) => {
+      noteProtected(path);
+      return f;
+    });
+  });
+}
+
 function FileView({
   path,
   reloadKey,
@@ -111,25 +125,28 @@ function FileView({
   state: AsyncState<FileInfo | null>;
 }) {
   const { data: file, error, loading } = state;
+  // Hidden files (git-ignored, ignore list, protected) get no change tracking, git views or basket.
+  const hidden = file?.hidden;
+  const tracked = file && !deleted && !hidden ? file : null;
   // Hooks first: the early returns below would skip them.
-  const fc = useFileChanges(file && !deleted ? file : null);
+  const fc = useFileChanges(tracked);
   // ---------- git: the diff against the last commit, or blame (only with git_enabled) ----------
   const git = useGit();
   const setGitView = git?.setView;
-  const mode = git?.view?.path === path ? git.view.mode : null;
+  const mode = git?.view?.path === path && !hidden ? git.view.mode : null;
   const entry = git?.byPath.get(path) ?? null;
   const gone = deleted || (!file && error instanceof ApiError && error.status === 404);
   const deletedInGit = gone && entry?.status === "D";
   const closeGit = useCallback(() => setGitView?.(null), [setGitView]);
   const live = gone ? null : file;
   const version = `${live ? `${live.mtime}:${live.size}` : "gone"}:${entry?.status ?? "-"}:${git?.status?.head ?? "-"}:${reloadKey}`;
-  const gfc = useGitCompare(path, live, Boolean(git) && ((mode === "compare" && Boolean(live)) || deletedInGit), version, closeGit);
+  const gfc = useGitCompare(path, live, Boolean(git) && !hidden && ((mode === "compare" && Boolean(live)) || deletedInGit), version, closeGit);
   const onMode = useCallback(
     (m: BannerMode) => setGitView?.(m === "git" ? { path, mode: "compare" } : null),
     [setGitView, path],
   );
   // The review basket: the changes on screen (the git comparison's while it is shown, none under blame).
-  const review = useFileReview(file && !deleted ? file : null, mode === "blame" ? null : (gfc ?? fc));
+  const review = useFileReview(tracked, mode === "blame" ? null : (gfc ?? fc));
   const addAll = review && file ? <BasketAddAll review={review} path={file.path} /> : null;
   if (deletedInGit && gfc) {
     return (
@@ -168,12 +185,14 @@ function FileView({
     }
     return loading ? <ViewerLoading /> : null;
   }
+  if (hidden === "deny") return <ProtectedFileView file={file} reloadKey={reloadKey} />;
   const Viewer = VIEWERS[file.kind] ?? TextViewer;
   const blame = mode === "blame";
   const shown = blame ? null : (gfc ?? fc);
   const diffing = Boolean(shown?.changed && shown.showDiff);
   return (
     <FileChangeContext.Provider value={shown}>
+      {hidden ? <HiddenNotice reason={hidden} /> : null}
       {gfc && !blame ? (
         <ChangeBanner state={gfc} git={gfc} kind={file.kind} onMode={fc?.changed ? onMode : undefined} actions={addAll} />
       ) : fc?.changed && !blame ? (
@@ -241,7 +260,8 @@ function EditorSlot(props: Omit<React.ComponentProps<typeof EditorPane>, "onOpen
 function Shell({ initialConfig }: { initialConfig: AppConfig | null }) {
   const route = useRoute();
   const { navigate } = route;
-  const { tree, loading, error, refresh } = useTree();
+  const showHidden = usePref(showHiddenPref, false);
+  const { tree, loading, error, refresh } = useTree(showHidden);
   const { setOpen, setOpenMobile, isMobile } = useSidebar();
   const [config, setConfig] = useState<AppConfig | null>(initialConfig);
   const sort = usePref(sortPref, "name");
@@ -324,6 +344,7 @@ function Shell({ initialConfig }: { initialConfig: AppConfig | null }) {
   const changeKinds = useCallback((k: FileKind[]) => kindsPref.set(k), []);
   const changeSort = useCallback((s: SortMode) => sortPref.set(s), []);
   const changeChangedOnly = useCallback((on: boolean) => changedOnlyPref.set(on), []);
+  const changeShowHidden = useCallback((on: boolean) => showHiddenPref.set(on), []);
   // Leaving a file (to another file, a folder or home) records the version that was on screen.
   // A route effect, not an unmount cleanup: StrictMode re-runs cleanups.
   const { flushPending, rename: renameChanges, expectOwnWrite, ownSave, onSeenEvent, resync: resyncChanges } = changes;
@@ -333,7 +354,7 @@ function Shell({ initialConfig }: { initialConfig: AppConfig | null }) {
   );
   useEffect(() => flushPending(route.path), [route.path, flushPending]);
 
-  const root = useMemo(() => (tree ? buildTree(tree) : null), [tree]);
+  const root = useMemo(() => (tree ? buildTree(tree, { hidden: showHidden }) : null), [tree, showHidden]);
   const rootName = config?.root_name ?? "viewer";
 
   useEffect(() => {
@@ -494,8 +515,24 @@ function Shell({ initialConfig }: { initialConfig: AppConfig | null }) {
         return;
       }
       if (ev.deleted.some((d) => d === cur || cur.startsWith(`${d}/`))) {
-        if (editing) editing.externalChange("deleted");
-        else setDeletedPath(cur);
+        const gone = () => {
+          if (pathRef.current !== cur) return;
+          if (editing) editing.externalChange("deleted");
+          else setDeletedPath(cur);
+        };
+        if (!ev.hidden_changed) {
+          gone();
+          return;
+        }
+        // A .gitignore change can hide the open file without deleting it: still there, reload it.
+        loadFileInfo(cur, Boolean(configRef.current?.reveal_enabled)).then(
+          () => {
+            if (pathRef.current === cur && !editing) setReloadKey((k) => k + 1);
+          },
+          (e: unknown) => {
+            if (e instanceof ApiError && e.status === 404) gone();
+          },
+        );
         return;
       }
       if (ev.modified.includes(cur)) {
@@ -575,8 +612,11 @@ function Shell({ initialConfig }: { initialConfig: AppConfig | null }) {
   const isDir = Boolean(dirNode);
   const deleted = deletedPath !== null && deletedPath === route.path;
   const fileKey = route.path && tree && !isDir ? route.path : "";
+  const revealEnabled = Boolean(config?.reveal_enabled);
+  // A protected file is refused (403); with reveal on, ask again for its metadata only
+  // (straight away when the tree already listed it as protected).
   const fileState = useAsync<FileInfo | null>(fileKey, reloadKey, (signal) =>
-    fileKey ? api.file(fileKey, signal) : Promise.resolve(null),
+    fileKey ? loadFileInfo(fileKey, revealEnabled, signal) : Promise.resolve(null),
   );
 
   const showEditor = edit !== null && (route.path === edit.path || route.path === edit.from);
@@ -690,7 +730,7 @@ function Shell({ initialConfig }: { initialConfig: AppConfig | null }) {
   const gitEntry = git && route.path ? (git.byPath.get(route.path) ?? null) : null;
   const gitMode: GitViewMode | null = git?.view?.path === route.path ? git.view.mode : null;
   const gitHeader =
-    git && !showEditor && (openFile?.path === route.path || gitEntry?.status === "D")
+    git && !showEditor && !openFile?.hidden && (openFile?.path === route.path || gitEntry?.status === "D")
       ? {
           status: gitEntry?.status ?? null,
           mode: gitMode,
@@ -745,6 +785,8 @@ function Shell({ initialConfig }: { initialConfig: AppConfig | null }) {
             onMarkAllSeen={changes.markAllSeen}
             onClearHistory={changes.clearHistory}
             onOpenGit={onOpenGit}
+            showHidden={showHidden}
+            onShowHiddenChange={changeShowHidden}
           />
           <SidebarInset className="min-w-0">
             <FileHeader

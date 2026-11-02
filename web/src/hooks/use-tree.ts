@@ -11,7 +11,8 @@ export interface TreeState {
   refresh: () => Promise<void>;
 }
 
-export function useTree(): TreeState {
+/** `showHidden`: also list hidden items (`/api/tree?hidden=1`); the tree reloads when it changes. */
+export function useTree(showHidden = false): TreeState {
   const [tree, setTree] = useState<TreeResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -22,7 +23,7 @@ export function useTree(): TreeState {
     const ctrl = new AbortController();
     inflight.current = ctrl;
     try {
-      const t = await api.tree(ctrl.signal);
+      const t = await api.tree(ctrl.signal, { hidden: showHidden });
       if (ctrl.signal.aborted) return;
       setTree(t);
       setError(null);
@@ -35,7 +36,7 @@ export function useTree(): TreeState {
         setLoading(false);
       }
     }
-  }, []);
+  }, [showHidden]);
 
   useEffect(() => {
     // Initial fetch of the tree (external system sync).

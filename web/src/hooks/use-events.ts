@@ -58,6 +58,7 @@ export function useEvents(
             deleted: data.deleted ?? [],
             renames: data.renames ?? [],
             dirs_changed: Boolean(data.dirs_changed),
+            hidden_changed: Boolean(data.hidden_changed),
           });
         } catch {
           /* ignore malformed event */

@@ -142,6 +142,7 @@ class Settings:
     bridge_url: str = ""  # DOCS_VIEWER_BRIDGE_URL, http://127.0.0.1:<port>
     bridge_token: str = field(default="", repr=False)  # DOCS_VIEWER_BRIDGE_TOKEN (never logged)
     git: str = ""  # --git / DOCS_VIEWER_GIT: "" = find git, "off" = no git features, else the git executable
+    allow_reveal: bool = True  # --no-reveal / DOCS_VIEWER_NO_REVEAL=1: denied files are never shown, nor listed
 
     def __post_init__(self) -> None:
         self.root = canonical_path(self.root) if self.root is not None else None
@@ -239,6 +240,9 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--git", metavar="PATH|off",
                    help="git executable for the read-only git views, or 'off' (env DOCS_VIEWER_GIT; "
                         "default: found on PATH and the usual install locations)")
+    p.add_argument("--no-reveal", action="store_true", default=None,
+                   help="never show deny-listed files, not even on request, and leave them out of the "
+                        "hidden-files listing (env DOCS_VIEWER_NO_REVEAL=1)")
     return p
 
 
@@ -337,5 +341,6 @@ def settings_from_args(argv: list[str] | None = None, env: dict | None = None) -
         desktop=desktop,
         bridge_url=(env.get("DOCS_VIEWER_BRIDGE_URL") or "").strip() if desktop else "",
         bridge_token=(env.get("DOCS_VIEWER_BRIDGE_TOKEN") or "").strip() if desktop else "",
+        allow_reveal=not (bool(a.no_reveal) or truthy(env.get("DOCS_VIEWER_NO_REVEAL"))),
         git=(a.git if a.git is not None else env.get("DOCS_VIEWER_GIT") or "").strip(),
     )

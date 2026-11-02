@@ -279,6 +279,9 @@ export function FileHeader({
   };
 
   const inline = file && (file.kind === "image" || file.kind === "pdf");
+  // Protected (deny-list) files are shown as read-only text only: no raw link, PDF or print.
+  const protectedFile = file?.hidden === "deny";
+  const doc = !protectedFile && (file?.kind === "markdown" || file?.kind === "docx");
 
   return (
     <header className="no-print sticky top-0 z-20 flex h-14 shrink-0 items-center gap-2 border-b bg-background/95 px-3 backdrop-blur">
@@ -385,7 +388,7 @@ export function FileHeader({
             <CopyIcon />
           </TooltipButton>
         ) : null}
-        {file ? (
+        {file && !protectedFile ? (
           <TooltipButton label={inline ? "Open raw file in a new tab" : "Download raw file"} asChild>
             {inline ? (
               <a href={rawUrl(file.path)} target="_blank" rel="noreferrer noopener">
@@ -398,14 +401,17 @@ export function FileHeader({
             )}
           </TooltipButton>
         ) : null}
-        {file && (file.kind === "markdown" || file.kind === "mermaid" || file.kind === "docx") ? <PdfMenu key={file.path} file={file} /> : null}
-        {(file?.kind === "markdown" || file?.kind === "docx") && !editing ? <ReadingWidthMenu /> : null}
-        {file?.kind === "markdown" || file?.kind === "docx" ? (
+        {file && !protectedFile && (file.kind === "markdown" || file.kind === "mermaid" || file.kind === "docx") ? <PdfMenu key={file.path} file={file} /> : null}
+        {doc && !editing ? <ReadingWidthMenu /> : null}
+        {doc ? (
           <TooltipButton label="Print" onClick={() => window.print()}>
             <PrinterIcon />
           </TooltipButton>
         ) : null}
-        {editEnabled ? <FileActionsMenu path={path} isDir={isDir} isFile={!!file} /> : null}
+        {/* The server refuses file operations on protected and ignore-list paths. */}
+        {editEnabled && file?.hidden !== "deny" && file?.hidden !== "ignore" ? (
+          <FileActionsMenu path={path} isDir={isDir} isFile={!!file} />
+        ) : null}
         <ThemeToggle />
         <Button variant="outline" size="sm" className="ml-1 gap-2 text-muted-foreground" onClick={onSearch}>
           <SearchIcon />
