@@ -1,3 +1,5 @@
+<img src="site/public/logo.svg" alt="" width="72" height="72">
+
 # DeltaDeck
 
 Every change, stacked for review. DeltaDeck is a local-only viewer for one

@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <style>
+    .back { fill: #e5e5e5; stroke: #a3a3a3; }
+    .mid { fill: #f5f5f5; stroke: #737373; }
+    .front { fill: #171717; }
+    .delta { fill: none; stroke: #fbbf24; }
+    @media (prefers-color-scheme: dark) {
+      .back { fill: #262626; stroke: #525252; }
+      .mid { fill: #404040; stroke: #737373; }
+      .front { fill: #fafafa; }
+      .delta { stroke: #d97706; }
+    }
+  </style>
+  <rect class="back" x="20" y="4" width="34" height="44" rx="6" stroke-width="2" transform="rotate(12 37 26)"/>
+  <rect class="mid" x="15" y="9" width="34" height="44" rx="6" stroke-width="2" transform="rotate(5 32 31)"/>
+  <rect class="front" x="10" y="14" width="34" height="44" rx="6"/>
+  <path class="delta" d="M27 26 L36 44 H18 Z" stroke-width="4" stroke-linejoin="round"/>
+</svg>

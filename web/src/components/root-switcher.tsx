@@ -234,7 +234,8 @@ export function NoRootView({ switchEnabled }: { switchEnabled: boolean }) {
     <div className="flex min-h-svh items-center justify-center p-6">
       <div className="w-full max-w-md space-y-6 text-center">
         <div className="space-y-2">
-          <FolderOpenIcon className="mx-auto size-10 text-muted-foreground" />
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/logo.svg" alt="DeltaDeck" width={48} height={48} className="mx-auto" />
           <h1 className="text-xl font-semibold">No folder selected</h1>
           <p className="text-sm text-muted-foreground">
             {!switchEnabled
