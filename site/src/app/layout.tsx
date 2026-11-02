@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import type { Metadata, Viewport } from "next";
+import { Analytics } from "@vercel/analytics/next";
 import { DESCRIPTION, TAGLINE } from "@/lib/site";
 import "./globals.css";
 
@@ -36,7 +37,11 @@ export const viewport: Viewport = {
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html lang="en" className="antialiased">
-      <body className="min-h-screen">{children}</body>
+      <body className="min-h-screen">
+        {children}
+        {/* Vercel Web Analytics: cookie-less page views for this site only (the app sends nothing) */}
+        <Analytics />
+      </body>
     </html>
   );
 }
