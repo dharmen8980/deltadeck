@@ -12,6 +12,7 @@ from fastapi import Request
 ALLOWED_HOSTS = ["127.0.0.1", "localhost"]
 ROOTS_PREFIX = "/api/roots"  # folder switching; served by the outer RootSwitcher (roots.py), RootGate-guarded
 SEEN_PREFIX = "/api/seen"  # "changed since you last looked" history (seen.py); same outer app and gate
+HIDING_PREFIX = "/api/hiding"  # per-folder hidden-file settings (hiding_routes.py); same outer app and gate
 
 
 def is_roots_path(path: str) -> bool:
@@ -22,9 +23,13 @@ def is_seen_path(path: str) -> bool:
     return path == SEEN_PREFIX or path.startswith(SEEN_PREFIX + "/")
 
 
+def is_hiding_path(path: str) -> bool:
+    return path == HIDING_PREFIX or path.startswith(HIDING_PREFIX + "/")
+
+
 def is_gated_path(path: str) -> bool:
     """Paths the outer RootSwitcher serves itself, behind RootGate."""
-    return is_roots_path(path) or is_seen_path(path)
+    return is_roots_path(path) or is_seen_path(path) or is_hiding_path(path)
 
 
 def host_only(value: str) -> str:

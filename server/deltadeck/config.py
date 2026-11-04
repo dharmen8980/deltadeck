@@ -15,9 +15,19 @@ from pathlib import Path
 
 HOST = "127.0.0.1"  # hardcoded on purpose: never configurable
 DEFAULT_PORT = 8765
-DEFAULT_DENY = (".env", ".env*", "*token*", "*secret*", "*credential*", "*.pem", "*.key")
-# .ldv-tmp-*: the editor's temporary files under the app's former name (leftovers stay hidden)
-DEFAULT_IGNORE = ("__pycache__", "*.pyc", ".DS_Store", "node_modules", ".venv", ".git", ".deltadeck-tmp-*",
+# Protected (deny-list) names: .env files and private keys, which hold credentials. Never searched, tracked or
+# edited; opened read-only on request.
+DEFAULT_DENY = (".env", ".env.*", "*.pem", "*.key")
+# Templates meant to be read and committed (.env.example, .env.local.sample, ...): the built-in deny
+# patterns above do not cover them (a --deny pattern does). Gone with --no-default-deny.
+DEFAULT_DENY_EXCEPT = (".env*.example", ".env*.sample", ".env*.template")
+# Built-in ignore list, kept basic: git's own folder, macOS litter, dependency folders, Python caches
+# and the editor's temporary files (.ldv-tmp-*: under the app's former name; leftovers stay hidden).
+# Hide anything else yourself: right-click Hide, a pattern in the Hidden files dialog, or --ignore.
+# An entry never hides a file git tracks: the folders on the path to a tracked file stay visible and
+# only the untracked files around it are hidden (hiding.tracked_keep). Any item can be shown per path
+# in the Hidden files dialog.
+DEFAULT_IGNORE = (".git", ".DS_Store", "node_modules", "__pycache__", ".venv", "venv", ".deltadeck-tmp-*",
                   ".ldv-tmp-*")
 DEFAULT_SEARCH_MAX_MB = 2.0
 DEFAULT_SEARCH_MAX_FILES = 100_000  # files content-indexed in all (deltadeck.search)
@@ -68,6 +78,8 @@ class ConfigError(ValueError):
 def fold(name: str) -> str:
     """Canonical form for name matching: NFKC + casefold (so e.g. U+017F 'long s' == 's',
     NFD == NFC). APFS is case- and normalisation-insensitive, so plain .lower() is not enough."""
+    if name.isascii():
+        return name.lower()  # the same result, without the two normalisations (the walker's hot path)
     return unicodedata.normalize("NFKC", unicodedata.normalize("NFKC", name).casefold())
 
 
@@ -147,7 +159,13 @@ class Settings:
     root: str | None  # None: no folder selected yet (the UI offers the folder picker)
     port: int = DEFAULT_PORT
     deny: tuple[str, ...] = DEFAULT_DENY
-    ignore: tuple[str, ...] = DEFAULT_IGNORE
+    # names the built-in deny patterns leave out (templates); --deny patterns still match them
+    deny_except: tuple[str, ...] = DEFAULT_DENY_EXCEPT
+    # --deny: never lifted by deny_except, also when its text equals a built-in pattern
+    deny_extra: tuple[str, ...] = ()
+    ignore: tuple[str, ...] = DEFAULT_IGNORE  # the base list: DEFAULT_IGNORE + ignore_extra
+    # --ignore: always applied, also to tracked files; a single item can still be shown per path
+    ignore_extra: tuple[str, ...] = ()
     search_max_bytes: int = int(DEFAULT_SEARCH_MAX_MB * 1024 * 1024)
     search_max_files: int = DEFAULT_SEARCH_MAX_FILES
     search_max_total_bytes: int = int(DEFAULT_SEARCH_MAX_TOTAL_MB * 1024 * 1024)
@@ -179,7 +197,19 @@ class Settings:
         self.upload_ext = tuple(sorted({e.strip().lower().lstrip(".") for e in self.upload_ext if e.strip()}))
         self.history_keep = max(1, int(self.history_keep))
         self.deny = tuple(fold(p) for p in self.deny)
+        self.deny_except = tuple(fold(p) for p in self.deny_except)
+        self.deny_extra = tuple(fold(p) for p in self.deny_extra)
         self.ignore = tuple(fold(p) for p in self.ignore)
+        self.ignore_extra = tuple(fold(p) for p in self.ignore_extra)
+
+    def deny_split(self) -> tuple[tuple[str, ...], tuple[str, ...]]:
+        """(lifted, strict): the built-in deny patterns, which deny_except lifts, and the rest
+        (--deny entries stay strict even when their text equals a built-in one)."""
+        builtin = {fold(p) for p in DEFAULT_DENY} if self.deny_except else set()
+        extra = set(self.deny_extra)
+        lifted = tuple(dict.fromkeys(p for p in self.deny if p in builtin and p not in extra))
+        strict = tuple(dict.fromkeys(p for p in self.deny if p not in lifted))
+        return lifted, strict
 
     def data_dir_overlaps_root(self) -> bool:
         return path_within(self.data_dir, self.root) or path_within(self.root, self.data_dir)
@@ -224,7 +254,9 @@ class Settings:
         d = [] if no_default_deny else list(DEFAULT_DENY)
         d += list(deny or [])
         i = list(DEFAULT_IGNORE) + list(ignore or [])
-        return cls(root=root, deny=tuple(d), ignore=tuple(i), **kw)
+        kw.setdefault("deny_except", () if no_default_deny else DEFAULT_DENY_EXCEPT)
+        return cls(root=root, deny=tuple(d), deny_extra=tuple(deny or []), ignore=tuple(i),
+                   ignore_extra=tuple(ignore or []), **kw)
 
 
 def _split_env(value: str | None) -> list[str]:
@@ -240,10 +272,13 @@ def build_parser() -> argparse.ArgumentParser:
                                   "in the browser, else none - choose one in the browser)")
     p.add_argument("--port", type=int, help=f"port (env DELTADECK_PORT, default {DEFAULT_PORT})")
     p.add_argument("--deny", action="append", default=[], metavar="PATTERN",
-                   help="extra deny pattern (repeatable; env DELTADECK_DENY comma-separated)")
-    p.add_argument("--no-default-deny", action="store_true", help="drop the built-in deny patterns")
+                   help="extra deny (protected) pattern, besides the built-in .env and .env.* (repeatable; "
+                        "env DELTADECK_DENY comma-separated)")
+    p.add_argument("--no-default-deny", action="store_true",
+                   help="drop the built-in deny patterns (.env, .env.*)")
     p.add_argument("--ignore", action="append", default=[], metavar="PATTERN",
-                   help="extra ignore pattern (repeatable; env DELTADECK_IGNORE comma-separated)")
+                   help="extra ignore pattern, always applied, besides the built-in .git, .DS_Store, node_modules, "
+                        "__pycache__, .venv and venv (repeatable; env DELTADECK_IGNORE comma-separated)")
     p.add_argument("--search-max-mb", type=float,
                    help="max file size indexed for search, MB (env DELTADECK_SEARCH_MAX_MB, default 2)")
     p.add_argument("--search-max-files", type=int,
@@ -326,10 +361,15 @@ def load_state(data_dir: str) -> dict:
 
 def save_state(data_dir: str, state: dict) -> None:
     """Atomic write (tmp + os.replace), mode 0600, data dir 0700."""
-    os.makedirs(data_dir, mode=0o700, exist_ok=True)
-    path = _state_path(data_dir)
-    tmp = f"{path}.tmp-{secrets.token_hex(4)}"
     data = {"last_root": state.get("last_root"), "recent": list(state.get("recent") or [])[:RECENT_MAX]}
+    write_private_json(_state_path(data_dir), data)
+
+
+def write_private_json(path: str, data) -> None:
+    """Atomic JSON write: a fresh tmp file (O_EXCL, never through a symlink) at mode 0600, fsync,
+    os.replace; its directory is created 0700."""
+    os.makedirs(os.path.dirname(path), mode=0o700, exist_ok=True)
+    tmp = f"{path}.tmp-{secrets.token_hex(4)}"
     try:
         fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
         with open(fd, "w", encoding="utf-8") as f:

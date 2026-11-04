@@ -45,7 +45,7 @@ over; macOS asks for folder access once again.
 
 - `<userData>/data`: the server's data dir (`state.json` with recent folders
   and the last folder; `seen.sqlite3`, the [changes history](changes.md);
-  per-folder history, trash and audit log when editing is on; see
+  per-folder hidden-file settings; per-folder history, trash and audit log when editing is on; see
   [Recovery data](editing.md#recovery-data-the-data-dir)).
 - `<userData>/logs/server.log`: server output (rotated at 5 MB).
 - `<userData>/settings.json`: Allow editing and the last viewer port (reused so

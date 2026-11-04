@@ -40,30 +40,48 @@ file sidebar's.
 
 ## Hidden files
 
-When the folder is inside a git repository, files and folders that git
-ignores are left out of the sidebar, search and What's new. Files git tracks
-stay visible even if an ignore pattern matches them. The viewer's own ignore
-list (`node_modules`, `.venv`, `__pycache__`, ...) and protected files
-(`.env`, `*.pem`, `*token*`, ...) are left out too.
+The sidebar leaves out a short built-in list (`.git`, `.DS_Store`,
+`node_modules`, `__pycache__`, `.venv`, `venv`), protected files (`.env` and
+`.env.*`, such as `.env.local`, and `*.pem` / `*.key` keys; templates like `.env.example` show) and
+anything you hide. Build output such as `dist` or `build` shows; right-click
+it and choose **Hide** if you do not want it. Files git tracks are never hidden
+by the built-in list: in a committed `node_modules/` folder, the tracked files
+show and the untracked files around them stay hidden. Files git ignores are shown by
+default, dimmed (with everything inside an ignored folder) in the sidebar, the
+folder pages, search results and What's new; hover one to see "ignored by
+git". The
+full list and the rule syntax are in
+[Configuration](configuration.md#hidden-files).
 
-**Show hidden files** in the sidebar's filter menu lists them, dimmed:
-
-- Hover a row to see why it is hidden: ignored by git, on the viewer's ignore
-  list, or protected. Protected files have a lock icon.
-- A hidden folder is listed when you open it, so a big `node_modules` costs
-  nothing until then.
-- Hidden files open like any other file, with a short note above them. They
-  have no change highlights and cannot go in the review basket. Files on the
-  ignore list are read-only; git-ignored files can be edited as before.
+- The **Hidden files** button (the eye, left of Folder settings) shows how
+  many items are hidden and opens a list of them, grouped as Built-in,
+  Git-ignored, Hidden by you and Protected. A checked item shows; uncheck it
+  to hide it. Each group has a checkbox for all its items.
+- Unchecking the Git-ignored group hides every git-ignored item, also ones
+  created later. Checking it shows them again.
+- A change applies at once: a hidden item leaves the sidebar straight away.
+  A shown big folder (a `node_modules` of thousands of files) fills into the
+  sidebar a moment later, and into search after that. Quick clicks are sent
+  in order, so the last one wins.
+- Checking an item you hid removes your rule; it does not add another one.
+- Folder sizes show as a file count (up to "10,000+"). A hidden folder lists
+  its contents when you expand it, so a big `node_modules` costs nothing until
+  then. You can show one item inside it.
+- Click a file to open it. Click a folder to expand it.
+- **Hide a pattern...** at the bottom adds a rule such as `*.log`.
+- Right-click any file or folder > **Hide** (also in read-only mode).
+  **Undo** in the toast brings it back.
+- Hidden files open with a short note above them. They have no change
+  highlights and cannot go in the review basket. Files on the ignore list are
+  read-only; git-ignored files and files you hid can be edited.
 - A protected file first asks you to confirm, because it may contain secrets.
   It is then shown as read-only text, without download, PDF or copy for AI.
   The answer is kept for the tab's session only.
-- Hidden items are not shown while a file type or **Changed since viewed**
-  filter is on.
 
 ## Where it is saved
 
 In the browser's `localStorage` (the desktop app has its own), under
-`viewer.sidebarWidth`, `viewer.tocWidth`, `viewer.readingWidth` and
-`viewer.showHidden`. A default value removes the key. Nothing is stored on the
-server.
+`viewer.sidebarWidth`, `viewer.tocWidth` and `viewer.readingWidth`. A
+default value removes the key. Hide rules, the items you show or hide and the
+git-ignored choice are per folder, stored by the server in its data dir
+(`roots/<key>/hiding.json`), shared by every browser on that server.

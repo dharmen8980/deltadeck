@@ -121,7 +121,7 @@ def test_sse_change_event_real_server(root):
         assert any("brand_new.md" in d["added"] for d in got), got
         ev = next(d for d in got if "brand_new.md" in d["added"])
         assert set(ev) == {"version", "added", "modified", "deleted", "renames", "dirs_changed",
-                           "hidden_changed"}
+                           "hidden_changed", "ignored_changed"}
         assert ev["version"] >= 2
     finally:
         stop_server(server, th)

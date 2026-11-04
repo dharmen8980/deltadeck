@@ -7,6 +7,8 @@ import { ApiError, rawUrl, type AppConfig } from "@/lib/api";
 import { sha256Hex } from "@/lib/digest";
 import { formatBytes } from "@/lib/format";
 
+export { foldName, nameRules, utf8Length, validateName, validatePath, type NameRules } from "@/lib/name-rules";
+
 /** The editor's size limit when the server does not say (config.edit_max_bytes). */
 export const EDIT_MAX_BYTES = 2 * 1024 * 1024;
 
@@ -222,98 +224,6 @@ export async function loadEditable(path: string, signal?: AbortSignal, maxBytes 
   const lf = (text.match(/\n/g) ?? []).length;
   const crlf = lf > 0 && (text.match(/\r\n/g) ?? []).length === lf;
   return { text, sha256, size: buf.byteLength, crlf };
-}
-
-export function utf8Length(s: string): number {
-  return new TextEncoder().encode(s).byteLength;
-}
-
-// ---------- name validation (mirrors the server; the server stays authoritative) ----------
-
-const DEFAULT_DENY = [".env", ".env*", "*token*", "*secret*", "*credential*", "*.pem", "*.key"];
-const DEFAULT_IGNORE = [
-  "__pycache__", "*.pyc", ".DS_Store", "node_modules", ".venv", ".git", ".deltadeck-tmp-*", ".ldv-tmp-*",
-];
-
-/** NFKC + case folding, like the server's name folding (approximation of str.casefold). */
-export function foldName(s: string): string {
-  return s.normalize("NFKC").toLowerCase().replace(/ß/g, "ss").replace(/ſ/g, "s").normalize("NFKC");
-}
-
-const reCache = new Map<string, RegExp>();
-
-/** Python fnmatch.translate equivalent (full match). */
-function fnmatchRegex(pattern: string): RegExp {
-  const hit = reCache.get(pattern);
-  if (hit) return hit;
-  let re = "";
-  for (let i = 0; i < pattern.length; i++) {
-    const c = pattern[i];
-    if (c === "*") re += ".*";
-    else if (c === "?") re += ".";
-    else if (c === "[") {
-      let j = i + 1;
-      if (pattern[j] === "!") j++;
-      if (pattern[j] === "]") j++;
-      while (j < pattern.length && pattern[j] !== "]") j++;
-      if (j >= pattern.length) re += "\\[";
-      else {
-        let stuff = pattern.slice(i + 1, j).replace(/\\/g, "\\\\");
-        if (stuff.startsWith("!")) stuff = `^${stuff.slice(1)}`;
-        else if (stuff.startsWith("^")) stuff = `\\${stuff}`;
-        re += `[${stuff}]`;
-        i = j;
-      }
-    } else re += c.replace(/[.*+?^${}()|[\]\\/-]/g, "\\$&");
-  }
-  const out = new RegExp(`^(?:${re})$`, "s");
-  reCache.set(pattern, out);
-  return out;
-}
-
-function matchesAny(name: string, patterns: string[]): string | null {
-  const n = foldName(name);
-  for (const p of patterns) if (fnmatchRegex(foldName(p)).test(n)) return p;
-  return null;
-}
-
-export interface NameRules {
-  deny: string[];
-  ignore: string[];
-}
-
-export function nameRules(config: AppConfig | null): NameRules {
-  return {
-    deny: config?.deny_patterns ?? DEFAULT_DENY,
-    ignore: config?.ignore_patterns ?? DEFAULT_IGNORE,
-  };
-}
-
-/** Problem with a single path component, or null when it looks acceptable. */
-export function validateName(name: string, rules: NameRules): string | null {
-  if (!name) return "Enter a name.";
-  if (name === "." || name === "..") return "That name is reserved.";
-  if (/[/\\]/.test(name)) return "Names cannot contain / or \\.";
-  if (/[\u0000-\u001f\u007f]/.test(name)) return "Names cannot contain control characters.";
-  if (utf8Length(name) > 255) return "That name is too long (max 255 bytes).";
-  if (/[ .]$/.test(name)) return "Names cannot end with a space or a dot.";
-  if (/^\s/.test(name)) return "Names cannot start with whitespace.";
-  const denied = matchesAny(name, rules.deny);
-  if (denied) return `Matches the deny list (${denied}); the viewer would refuse it.`;
-  const ignored = matchesAny(name, rules.ignore);
-  if (ignored) return `Matches the ignore list (${ignored}); it would be hidden.`;
-  return null;
-}
-
-/** Validate every component of a root-relative path. */
-export function validatePath(path: string, rules: NameRules): string | null {
-  if (!path) return "Enter a path.";
-  if (path.startsWith("/")) return "Use a path relative to the root (no leading /).";
-  for (const part of path.split("/")) {
-    const err = validateName(part, rules);
-    if (err) return part ? `"${part}": ${err}` : "Paths cannot contain empty segments (//).";
-  }
-  return null;
 }
 
 export function uploadProblem(file: File, config: AppConfig | null): string | null {

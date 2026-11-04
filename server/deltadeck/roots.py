@@ -43,6 +43,7 @@ from .http_common import (
     same_site_request,
     send_json,
 )
+from .hiding_routes import register_hiding_routes
 from .search import INDEX_DIR, prune_indexes
 from .seen import SEEN_JSON_MAX, SeenDB, register_seen_routes, seen_disabled_reason
 
@@ -140,9 +141,10 @@ class _Inner:
 
 
 class RootGate:
-    """Guards mutating /api/roots/* and /api/seen/* requests like EditGate: X-Root-Token,
+    """Guards mutating /api/roots/*, /api/seen/* and /api/hiding/* requests like EditGate: X-Root-Token,
     Sec-Fetch-Site same-origin (if sent), loopback viewer/dev Origin (if sent), application/json,
-    bounded body. --lock-root -> 403 below /api/roots only (the changes history still works).
+    bounded body. --lock-root -> 403 below /api/roots only (the changes history and the hidden-file
+    settings still work).
     GET/HEAD pass (read-only routes)."""
 
     def __init__(self, app, *, token: str, origins: set[str], locked: bool):
@@ -225,7 +227,7 @@ class PathBody(_Body):
 
 
 class RootSwitcher:
-    """Outer ASGI app: security stack -> RootGate -> /api/roots, /api/seen + no-folder mode, or
+    """Outer ASGI app: security stack -> RootGate -> /api/roots, /api/seen, /api/hiding + no-folder mode, or
     the current inner app. Switch = build + validate, start the new lifespan, swap under a lock, stop the old
     one (its SSE streams end; clients reconnect / reload)."""
 
@@ -440,6 +442,7 @@ class RootSwitcher:
             return j(self.roots_info())
 
         register_seen_routes(app, self.seen, lambda: self.inner)
+        register_hiding_routes(app, lambda: self.inner)
 
         @app.api_route(ROOTS_PREFIX + "/{rest:path}", methods=["GET", "HEAD", "POST"])
         async def roots_not_found(rest: str):

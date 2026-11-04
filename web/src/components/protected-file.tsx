@@ -1,6 +1,6 @@
 "use client";
 
-// Hidden files opened from the tree: a slim notice for git-ignored and ignore-list files, and a
+// Hidden files opened from the tree: a slim notice for git-ignored, user-hidden and ignore-list files, and a
 // confirm-then-read-only view for protected (deny-list) files. Protected files are never
 // searched, tracked, edited, exported or copied for AI; their text is fetched with reveal=1 only
 // after the user said so.
@@ -19,8 +19,9 @@ import { dirname } from "@/lib/paths";
 const confirmed = new Set<string>();
 
 const NOTICES: Record<Exclude<HiddenReason, "deny">, string> = {
-  git: "Ignored by git: not searched and not tracked for changes.",
-  ignore: "On the viewer's ignore list: read-only, not searched or tracked.",
+  git: "Ignored by git and hidden: not searched or tracked. Show it in Hidden files (the eye button in the sidebar).",
+  ignore: "On the viewer's ignore list: read-only, not searched or tracked. Show it in Hidden files (the eye button in the sidebar).",
+  user: "Hidden by you; it still opens. Show it in Hidden files (the eye button in the sidebar).",
 };
 
 const NO_TEXT_KINDS = new Set(["image", "pdf", "xlsx", "docx", "binary"]);

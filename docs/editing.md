@@ -15,7 +15,8 @@ The server logs `editing on` with the data dir path. With `--read-only` no
 edit UI is shown, the header shows a **Read-only** badge, every `/api/edit/*`
 request (any method) returns 403 `{"detail":"editing disabled"}` and nothing
 in the docs folder can change (the data dir only receives `state.json`, the
-remembered folders, and `seen.sqlite3`, the [changes history](changes.md)).
+remembered folders, `seen.sqlite3`, the [changes history](changes.md), and
+each folder's `hiding.json`, its [hidden-file settings](configuration.md#hidden-files)).
 The same happens in a folder that overlaps the data dir (see [How writes are
 protected](#how-writes-are-protected)). `--allow-edit` is still accepted and
 does nothing.
@@ -103,6 +104,7 @@ history or trash (the path is printed at startup with `editing on`):
 .data/search/<key>.sqlite3         content-search index per root: tokens and file metadata only (see Configuration)
 .data/roots/<key>/                 <key> = first 24 hex chars of sha256(canonical root path)
   root.json                        {root}; the server refuses to start if it names a different root
+  hiding.json                      {version: 2, root, hide_git, rules, show, hide}: this folder's hidden-file settings
   audit.jsonl                      one JSON line per change: ts, op, path, to, size, sha256, history_id, trash_id (never contents)
   history/<sha256 of path>/<id>    previous bytes of a file, plus <id>.json {id, path, saved_at, size, sha256, reason}
   trash/<id>/                      a deleted file or folder, plus trash/<id>/manifest.json {id, original_path, deleted_at, kind, size, file_count}
@@ -150,9 +152,11 @@ The server recreates the folders on the next edit.
   (the old file then goes to history).
 - Names are refused if they are empty, `.`/`..`, contain `/`, `\`, NUL,
   control or bidi characters, are longer than 255 bytes, start with a space or
-  end with a space or dot, or match the deny or ignore list (so you cannot
-  create `.env`, `x_token.md` or `__pycache__`). Existing names are compared
-  ignoring case and Unicode normalisation, as APFS does.
+  end with a space or dot, match the deny list, or would be hidden by the
+  ignore list (so you cannot create `.env`, `.env.local` or `__pycache__`; a
+  new file in `node_modules/` is untracked, so it would be hidden). Tracked files in
+  ignore-list folders can be edited. Existing names are compared ignoring
+  case and Unicode normalisation, as APFS does.
 - Folders that contain deny-listed files cannot be moved or deleted from the
   viewer (you could not see what would be affected).
 - Symlinks are never written through or operated on.
@@ -176,9 +180,10 @@ must:
 
 Anything else gets 403. Non-GET methods on every other route still get 405, and
 the CSP is unchanged. Each write then goes through one guard: every path
-component (including the new name) is checked against the root, the deny and
-ignore lists and the name rules; no component may be a symlink (checked with
-lstat), and the operation itself works through file descriptors of the
+component (including the new name) is checked against the root, the deny
+list, the paths the ignore list hides (a new file in `node_modules/` is untracked, so
+it would be hidden) and the name rules; no component may be a symlink
+(checked with lstat), and the operation itself works through file descriptors of the
 parent folders opened with `O_NOFOLLOW`, so a folder swapped for a symlink
 after the check is refused (403) instead of followed; files are written
 atomically (a `.deltadeck-tmp-*` file created with `O_EXCL` in the same folder,

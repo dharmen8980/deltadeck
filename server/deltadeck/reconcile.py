@@ -12,6 +12,7 @@ from __future__ import annotations
 import asyncio
 import collections
 import concurrent.futures
+import functools
 import logging
 import os
 import subprocess
@@ -328,6 +329,34 @@ class Reconciler:
             self._executor = None
 
 
+INDEX_SETTLE_S = 1.0  # after a .git/index write, before asking git which files it tracks
+
+
+def _index_changed(store: Store, on_change, reconciler: Reconciler | None) -> None:
+    """git's index changed (a commit, git add -f, git rm --cached, a checkout): ask git again what
+    it ignores (a newly tracked file is no longer ignored, an untracked one may be) and which files
+    it tracks in ignore-list folders (forced past its throttle), once, shortly after (a burst of
+    writes is one query). git runs before the scan lock is taken."""
+    if getattr(store, "_index_task", None) is not None:
+        return
+
+    async def run() -> None:
+        try:
+            await asyncio.sleep(INDEX_SETTLE_S)
+            fn = functools.partial(store.refresh_ignored, force_tracked=True, git=True)
+            ch = await (reconciler._in_worker(fn) if reconciler is not None else asyncio.to_thread(fn))
+            if ch is not None:
+                await on_change(ch)
+        except asyncio.CancelledError:
+            raise
+        except Exception as e:  # never break the watcher
+            log.warning("could not refresh git's ignored and tracked files after an index change: %s", e)
+        finally:
+            store._index_task = None
+
+    store._index_task = asyncio.get_running_loop().create_task(run())
+
+
 async def _apply_batch(store: Store, on_change, batch, reconciler: Reconciler | None) -> None:
     paths = [os.path.normpath(p) for _, p in batch]
     ignored = getattr(store, "ignored", None)
@@ -342,6 +371,8 @@ async def _apply_batch(store: Store, on_change, batch, reconciler: Reconciler | 
                          else asyncio.to_thread(store.refresh_ignored))
             if ch0 is not None:
                 await on_change(ch0)
+        if getattr(store, "hiding", None) is not None and ".git/index" in rels:
+            _index_changed(store, on_change, reconciler)  # a commit or git add: tracked keep
         paths = [p for p, r in zip(paths, rels) if not (r and store.in_hidden_dir(r))]
     if reconciler is not None:
         if len(paths) >= BIG_BATCH:  # where a busy watcher drops or coalesces events

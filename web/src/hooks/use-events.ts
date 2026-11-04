@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import type { ChangeEvent } from "@/lib/api";
+import type { ChangeEvent, HidingState } from "@/lib/api";
 import type { SeenEvent } from "@/lib/seen-store";
 
 export type EventsStatus = "connecting" | "open" | "reconnecting";
@@ -13,23 +13,28 @@ export type EventsStatus = "connecting" | "open" | "reconnecting";
  * browser gives up on its own retry; `onClosed` runs each time it gives up (e.g. the
  * server answered 409 "no folder selected"), so the caller can re-check the config.
  * `onSeen` gets the `seen` events (changes history written by any tab or browser).
+ * `onHiding` gets the `hiding` events (the folder's hidden-file settings changed, by any tab; `client`
+ * names it). A `change` with hidden_changed means the hidden items changed (any cause).
  */
 export function useEvents(
   onChange: (ev: ChangeEvent) => void,
   onReconnect?: () => void,
   onClosed?: () => void,
   onSeen?: (ev: SeenEvent) => void,
+  onHiding?: (state: HidingState) => void,
 ): EventsStatus {
   const [status, setStatus] = useState<EventsStatus>("connecting");
   const changeRef = useRef(onChange);
   const reconnectRef = useRef(onReconnect);
   const closedRef = useRef(onClosed);
   const seenRef = useRef(onSeen);
+  const hidingRef = useRef(onHiding);
   useEffect(() => {
     changeRef.current = onChange;
     reconnectRef.current = onReconnect;
     closedRef.current = onClosed;
     seenRef.current = onSeen;
+    hidingRef.current = onHiding;
   });
 
   useEffect(() => {
@@ -68,6 +73,16 @@ export function useEvents(
         try {
           const data = JSON.parse((msg as MessageEvent<string>).data) as SeenEvent;
           if (Array.isArray(data.paths)) seenRef.current?.({ paths: data.paths, client: data.client ?? null, cleared: data.cleared === true });
+        } catch {
+          /* ignore malformed event */
+        }
+      });
+      es.addEventListener("hiding", (msg) => {
+        try {
+          const data = JSON.parse((msg as MessageEvent<string>).data) as HidingState;
+          if (data && typeof data.root === "string" && Array.isArray(data.rules) && Array.isArray(data.hide)) {
+            hidingRef.current?.(data);
+          }
         } catch {
           /* ignore malformed event */
         }

@@ -54,8 +54,11 @@ since viewed**. It lists every file of the folder with uncommitted changes, as
 - When the folder is a subfolder of the repository, only the files inside it
   are listed, with paths relative to the folder. A file renamed into the folder
   from outside it shows as added, with no link to its old path.
-- Denied names (`.env`, `*secret*`, …) and ignored ones never appear, and
-  neither do files git ignores (`.gitignore`). Submodules are skipped.
+- Denied names (`.env`, `.env.local`, …), untracked files in ignore-list
+  folders and files you hid never appear, and neither do files git ignores
+  (git does not report them). Files git tracks inside an ignore-list folder
+  (a committed `node_modules/`) do appear, with their diffs.
+  Submodules are skipped.
 - The list refreshes after live changes in the folder, when the window gets
   focus, and every 30 s while it is visible (commits and checkouts only touch
   `.git`, which the viewer does not watch). It shows at most 5,000 files.

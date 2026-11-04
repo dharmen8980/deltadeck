@@ -18,7 +18,6 @@ import {
   FolderPlusIcon,
   FunnelIcon,
   HistoryIcon,
-  LockIcon,
   PencilLineIcon,
   SparklesIcon,
   Trash2Icon,
@@ -84,11 +83,13 @@ import { useGit } from "@/components/git/git-context";
 import { useUncommittedSource } from "@/components/git/uncommitted-source";
 import { formatRelative } from "@/lib/format";
 import { isTypingTarget } from "@/lib/keys";
-import { api, errorMessage, type FileEntry, type FileKind, type TreeResponse } from "@/lib/api";
+import { type FileEntry, type FileKind, type TreeResponse } from "@/lib/api";
 import { changedDirsOf } from "@/lib/change-rules";
 import { dirname, viewerHref } from "@/lib/paths";
-import { filterFiles, hiddenLabel, hiddenNodesFromList, sortDirs, sortFiles, type DirNode, type SortMode } from "@/lib/tree";
+import { filterFiles, IGNORED_CLASS, IGNORED_NOTE, sortDirs, sortFiles, type DirNode, type SortMode } from "@/lib/tree";
 import { cn } from "@/lib/utils";
+import { copyText } from "@/lib/clipboard";
+import { HideItem, useHidingCtx, type HidingCtx } from "@/components/hide-menu";
 
 interface TreeCtx {
   sort: SortMode;
@@ -104,6 +105,8 @@ interface TreeCtx {
   changedDirs: ReadonlyMap<string, number>;
   /** "Changed since viewed" filter on: folder counts are changed counts */
   changedOnly: boolean;
+  /** right-click Hide (read-only mode too); null when the folder's hidden-file settings are off */
+  hiding: HidingCtx | null;
 }
 
 const DROP_CLASS = "data-[drop=true]:bg-primary/15 data-[drop=true]:ring-1 data-[drop=true]:ring-primary";
@@ -125,7 +128,7 @@ const KIND_LABELS: [FileKind, string][] = [
 const ACTIVE_CLASS =
   "data-active:bg-neutral-300 data-active:hover:bg-neutral-300 dark:data-active:bg-neutral-600 dark:data-active:hover:bg-neutral-600";
 
-function FileMenu({ ops, path, children }: { ops: EditOps; path: string; children: ReactNode }) {
+function FileMenu({ ops, path, extra, children }: { ops: EditOps; path: string; extra?: ReactNode; children: ReactNode }) {
   const dir = dirname(path);
   return (
     <ContextMenu>
@@ -161,12 +164,18 @@ function FileMenu({ ops, path, children }: { ops: EditOps; path: string; childre
         <ContextMenuItem variant="destructive" onSelect={() => ops.remove(path, false)}>
           <Trash2Icon /> Delete...
         </ContextMenuItem>
+        {extra ? (
+          <>
+            <ContextMenuSeparator />
+            {extra}
+          </>
+        ) : null}
       </ContextMenuContent>
     </ContextMenu>
   );
 }
 
-function FolderMenu({ ops, path, children }: { ops: EditOps; path: string; children: ReactNode }) {
+function FolderMenu({ ops, path, extra, children }: { ops: EditOps; path: string; extra?: ReactNode; children: ReactNode }) {
   const isRoot = !path;
   return (
     <ContextMenu>
@@ -200,6 +209,35 @@ function FolderMenu({ ops, path, children }: { ops: EditOps; path: string; child
             </ContextMenuItem>
           </>
         )}
+        {extra ? (
+          <>
+            <ContextMenuSeparator />
+            {extra}
+          </>
+        ) : null}
+      </ContextMenuContent>
+    </ContextMenu>
+  );
+}
+
+/** The menu of rows without file operations (read-only mode): Copy path and Hide. */
+function RowMenu({ ops, path, extra, children }: { ops: EditOps | null; path: string; extra: ReactNode; children: ReactNode }) {
+  const copy = () => {
+    if (ops) return ops.copyPath(path);
+    void copyText(path).then((ok) =>
+      ok ? toast.success("Path copied", { description: path }) : toast.error("Could not copy to clipboard"),
+    );
+  };
+  return (
+    <ContextMenu>
+      <ContextMenuTrigger asChild>{children}</ContextMenuTrigger>
+      <ContextMenuContent className="min-w-48">
+        <ContextMenuLabel className="truncate text-xs text-muted-foreground">{path}</ContextMenuLabel>
+        <ContextMenuItem onSelect={copy}>
+          <CopyIcon /> Copy path
+        </ContextMenuItem>
+        <ContextMenuSeparator />
+        {extra}
       </ContextMenuContent>
     </ContextMenu>
   );
@@ -218,6 +256,7 @@ function FileLink({
   label,
   hint,
   ops,
+  hiding = null,
   changed = false,
 }: {
   file: FileEntry;
@@ -226,32 +265,24 @@ function FileLink({
   label?: string;
   hint?: string;
   ops?: EditOps | null;
+  hiding?: HidingCtx | null;
   /** changed since the user last viewed it */
   changed?: boolean;
 }) {
-  // Hidden files: dimmed, no file operations, drag or change dot.
-  const hidden = file.hidden;
-  if (hidden) {
-    ops = null;
-    changed = false;
-  }
   const button = (
     <SidebarMenuButton
       asChild
       size="sm"
       isActive={active}
       data-path={file.path}
-      data-hidden={hidden ? "" : undefined}
-      className={cn("h-auto min-h-7 py-1", ACTIVE_CLASS, ops && DROP_CLASS, hidden && "opacity-60")}
+      className={cn("h-auto min-h-7 py-1", ACTIVE_CLASS, ops && DROP_CLASS, file.ignored && IGNORED_CLASS)}
     >
       <a
         href={viewerHref(file.path)}
         title={
-          hidden
-            ? `${file.path} · ${hiddenLabel(hidden)}`
-            : changed
-              ? `${file.path} · changed since you last viewed it${active ? " (counts as seen when you leave it)" : ""}`
-              : file.path
+          (changed
+            ? `${file.path} · changed since you last viewed it${active ? " (counts as seen when you leave it)" : ""}`
+            : file.path) + (file.ignored ? ` · ${IGNORED_NOTE}` : "")
         }
         onClick={(e) => {
           if (e.metaKey || e.ctrlKey || e.shiftKey || e.button !== 0) return;
@@ -262,7 +293,6 @@ function FileLink({
       >
         <FileKindIcon kind={file.kind} className="text-muted-foreground" />
         <span className="min-w-0 flex-1 truncate">{label ?? file.name}</span>
-        {hidden === "deny" ? <LockIcon className="size-3.5 shrink-0 text-muted-foreground" aria-label="protected" /> : null}
         {changed ? (
           <>
             {/* The open file: a ring until it counts as seen (on leave or Mark as seen). */}
@@ -283,9 +313,13 @@ function FileLink({
   return (
     <SidebarMenuItem>
       {ops ? (
-        <FileMenu ops={ops} path={file.path}>
+        <FileMenu ops={ops} path={file.path} extra={hiding ? <HideItem hiding={hiding} path={file.path} /> : null}>
           {button}
         </FileMenu>
+      ) : hiding ? (
+        <RowMenu ops={null} path={file.path} extra={<HideItem hiding={hiding} path={file.path} />}>
+          {button}
+        </RowMenu>
       ) : (
         button
       )}
@@ -294,78 +328,13 @@ function FileLink({
 }
 
 const DirItem = memo(function DirItem({ node, ctx }: { node: DirNode; ctx: TreeCtx }) {
-  if (node.hidden) return <HiddenDirItem node={node} ctx={ctx} />;
-  return <VisibleDirItem node={node} ctx={ctx} />;
-});
-
-type HiddenList = { dirs: DirNode[]; files: FileEntry[]; truncated: boolean };
-
-/** A hidden folder: dimmed, no file operations; its children are listed each time it is opened. */
-function HiddenDirItem({ node, ctx }: { node: DirNode; ctx: TreeCtx }) {
-  const open = ctx.expanded.has(node.path);
-  const [list, setList] = useState<HiddenList | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  useEffect(() => {
-    if (!open) return;
-    const ctrl = new AbortController();
-    api.hidden(node.path, ctrl.signal).then(
-      (res) => {
-        setList({ ...hiddenNodesFromList(res), truncated: res.truncated });
-        setError(null);
-      },
-      (e) => {
-        if ((e as Error).name !== "AbortError") setError(errorMessage(e));
-      },
-    );
-    return () => {
-      ctrl.abort();
-      setList(null);
-      setError(null);
-    };
-  }, [open, node.path]);
-  const FolderGlyph = open ? FolderOpenIcon : FolderIcon;
-  const reason = node.hidden ?? "ignore";
-  return (
-    <Collapsible asChild open={open} onOpenChange={(o) => ctx.onToggle(node.path, o)}>
-      <SidebarMenuItem>
-        <CollapsibleTrigger asChild>
-          <SidebarMenuButton
-            size="sm"
-            data-dir={node.path}
-            data-hidden=""
-            title={`${node.path} · ${hiddenLabel(reason)}`}
-            className="h-7 opacity-60"
-          >
-            <ChevronRightIcon className={cn("transition-transform", open && "rotate-90")} />
-            <FolderGlyph className="size-4 shrink-0 text-muted-foreground" />
-            <span className="min-w-0 flex-1 truncate">{node.name}</span>
-            {reason === "deny" ? <LockIcon className="size-3.5 shrink-0 text-muted-foreground" aria-label="protected" /> : null}
-          </SidebarMenuButton>
-        </CollapsibleTrigger>
-        <CollapsibleContent>
-          <SidebarMenuSub className="mr-0 ml-3 gap-0.5 pr-0 pl-1.5">
-            {error ? (
-              <li className="px-2 py-1 text-xs text-destructive">{error}</li>
-            ) : !list ? (
-              <li className="px-2 py-1 text-xs text-muted-foreground italic">Loading…</li>
-            ) : (
-              <>
-                <DirChildren node={{ ...node, dirs: list.dirs, files: list.files }} ctx={ctx} />
-                {list.truncated ? <li className="px-2 py-1 text-xs text-muted-foreground italic">More items not shown</li> : null}
-              </>
-            )}
-          </SidebarMenuSub>
-        </CollapsibleContent>
-      </SidebarMenuItem>
-    </Collapsible>
-  );
-}
-
-function VisibleDirItem({ node, ctx }: { node: DirNode; ctx: TreeCtx }) {
   const open = ctx.expanded.has(node.path);
   const nChanged = ctx.changedDirs.get(node.path) ?? 0;
   const changedLabel = `${nChanged} changed file${nChanged === 1 ? "" : "s"}`;
-  const title = nChanged ? `${node.path} · ${changedLabel} since you last viewed them` : node.path;
+  const title =
+    (nChanged ? `${node.path} · ${changedLabel} since you last viewed them` : node.path) +
+    (node.ignored ? ` · ${IGNORED_NOTE}` : "");
+  const dim = node.ignored && IGNORED_CLASS;
   const FolderGlyph = open ? FolderOpenIcon : FolderIcon;
   const inner = (
     <>
@@ -391,13 +360,13 @@ function VisibleDirItem({ node, ctx }: { node: DirNode; ctx: TreeCtx }) {
     <Collapsible asChild open={open} onOpenChange={(o) => ctx.onToggle(node.path, o)}>
       <SidebarMenuItem>
         {ctx.ops ? (
-          <FolderMenu ops={ctx.ops} path={node.path}>
+          <FolderMenu ops={ctx.ops} path={node.path} extra={ctx.hiding ? <HideItem hiding={ctx.hiding} path={node.path} /> : null}>
             <CollapsibleTrigger asChild>
               <SidebarMenuButton
                 size="sm"
                 data-dir={node.path}
                 title={title}
-                className={cn("h-7", DROP_CLASS)}
+                className={cn("h-7", DROP_CLASS, dim)}
                 draggable
                 onDragStart={(e) => startRowDrag(e, node.path, true)}
               >
@@ -405,9 +374,17 @@ function VisibleDirItem({ node, ctx }: { node: DirNode; ctx: TreeCtx }) {
               </SidebarMenuButton>
             </CollapsibleTrigger>
           </FolderMenu>
+        ) : ctx.hiding ? (
+          <RowMenu ops={null} path={node.path} extra={<HideItem hiding={ctx.hiding} path={node.path} />}>
+            <CollapsibleTrigger asChild>
+              <SidebarMenuButton size="sm" data-dir={node.path} title={title} className={cn("h-7", dim)}>
+                {inner}
+              </SidebarMenuButton>
+            </CollapsibleTrigger>
+          </RowMenu>
         ) : (
           <CollapsibleTrigger asChild>
-            <SidebarMenuButton size="sm" data-dir={node.path} title={title} className="h-7">
+            <SidebarMenuButton size="sm" data-dir={node.path} title={title} className={cn("h-7", dim)}>
               {inner}
             </SidebarMenuButton>
           </CollapsibleTrigger>
@@ -420,7 +397,7 @@ function VisibleDirItem({ node, ctx }: { node: DirNode; ctx: TreeCtx }) {
       </SidebarMenuItem>
     </Collapsible>
   );
-}
+});
 
 function DirChildren({ node, ctx }: { node: DirNode; ctx: TreeCtx }) {
   const dirs = sortDirs(node.dirs, ctx.sort);
@@ -437,6 +414,7 @@ function DirChildren({ node, ctx }: { node: DirNode; ctx: TreeCtx }) {
           active={f.path === ctx.activePath}
           onOpen={ctx.onOpen}
           ops={ctx.ops}
+          hiding={ctx.hiding}
           changed={ctx.changed.has(f.path)}
         />
       ))}
@@ -480,9 +458,8 @@ export interface FileTreeProps {
   onClearHistory: () => Promise<boolean>;
   /** open a file showing its changes since the last commit (Uncommitted list) */
   onOpenGit: (path: string) => void;
-  /** list hidden items (git-ignored, ignore list, protected) dimmed in the tree */
-  showHidden: boolean;
-  onShowHiddenChange: (on: boolean) => void;
+  /** right-click Hide (read-only mode too): the folder whose hidden-file settings can be changed, or null */
+  hidingRoot: string | null;
 }
 
 /** Confirm step of "Clear history…" (filter menu > Changes); outside the menu so focus returns properly. */
@@ -587,9 +564,10 @@ export function FileTree(props: FileTreeProps) {
   const dropEl = useRef<HTMLElement | null>(null);
   const expandTimer = useRef<{ dir: string; id: ReturnType<typeof setTimeout> } | null>(null);
 
+  const hiding = useHidingCtx(props.hidingRoot);
   const ctx = useMemo<TreeCtx>(
-    () => ({ sort, expanded, activePath, onToggle, onOpen, ops, changed, changedDirs, changedOnly }),
-    [sort, expanded, activePath, onToggle, onOpen, ops, changed, changedDirs, changedOnly],
+    () => ({ sort, expanded, activePath, onToggle, onOpen, ops, changed, changedDirs, changedOnly, hiding }),
+    [sort, expanded, activePath, onToggle, onOpen, ops, changed, changedDirs, changedOnly, hiding],
   );
 
   // ---------- drag and drop (editing only) ----------
@@ -607,8 +585,6 @@ export function FileTree(props: FileTreeProps) {
   /** The folder a drop at this element goes to, plus the element to highlight. */
   const dropTarget = (target: EventTarget | null, group: HTMLElement): { dir: string; el: HTMLElement } => {
     const t = target instanceof Element ? target : null;
-    // Hidden rows take no drops: their folder is not managed by the viewer.
-    if (t?.closest("[data-hidden]")) return { dir: "", el: group };
     const dirEl = t?.closest<HTMLElement>("[data-dir]");
     if (dirEl && group.contains(dirEl)) return { dir: dirEl.dataset.dir ?? "", el: dirEl };
     const fileEl = t?.closest<HTMLElement>("[data-path]");
@@ -799,16 +775,8 @@ export function FileTree(props: FileTreeProps) {
                   <DropdownMenuItem onSelect={() => setConfirmClear(true)}>
                     <EraserIcon /> Clear history…
                   </DropdownMenuItem>
-                  <DropdownMenuSeparator />
                 </>
               ) : null}
-              <DropdownMenuCheckboxItem
-                checked={props.showHidden}
-                onSelect={(e) => e.preventDefault()}
-                onCheckedChange={(on) => props.onShowHiddenChange(on === true)}
-              >
-                <span className="flex-1 whitespace-nowrap">Show hidden files</span>
-              </DropdownMenuCheckboxItem>
               <DropdownMenuSeparator />
               <DropdownMenuItem disabled={!kinds.length} onSelect={() => props.onKindsChange([])}>
                 <XIcon /> Show all types
@@ -881,6 +849,7 @@ export function FileTree(props: FileTreeProps) {
                     label={f.name}
                     hint={dirname(f.path) || undefined}
                     ops={ops}
+                    hiding={hiding}
                     changed={changed.has(f.path)}
                   />
                 ))}
@@ -927,6 +896,7 @@ export function FileTree(props: FileTreeProps) {
                         onOpen={onOpen}
                         hint={formatRelative(f.mtime)}
                         ops={ops}
+                        hiding={hiding}
                         changed={changed.has(f.path)}
                       />
                     ))}

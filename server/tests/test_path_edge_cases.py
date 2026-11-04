@@ -16,11 +16,12 @@ ENDPOINTS = ("/api/file", "/api/content", "/api/text", "/api/raw", "/api/csv")
 
 
 def test_long_s_does_not_bypass_deny(root):
+    # a --deny pattern with an "s" (the built-in .env patterns have none U+017F folds into)
     write(root / "sub" / "secret.txt", "zqsecretdata\n")
     write(root / "sub" / "ok.md", "fine\n")
     variants = ["sub/secret.txt", "sub/SECRET.TXT", "sub/ſecret.txt", "sub/./ſecret.txt",
                 "sub/ſECRET.txt", "ſub/ſecret.txt"]
-    with running(root) as c:
+    with running(root, deny=["*secret*"]) as c:
         for rel in variants:
             for ep in ENDPOINTS:
                 r = c.get(ep, params={"path": rel})
@@ -38,7 +39,7 @@ def test_long_s_does_not_bypass_deny(root):
 def test_long_s_symlink_target_is_denied(root):
     write(root / "secret.txt", "zqsecretdata\n")
     os.symlink("ſecret.txt", root / "link.md")
-    with running(root) as c:
+    with running(root, deny=["*secret*"]) as c:
         assert "link.md" not in {f["path"] for f in c.get("/api/tree").json()["files"]}
         for ep in ENDPOINTS:
             r = c.get(ep, params={"path": "link.md"})

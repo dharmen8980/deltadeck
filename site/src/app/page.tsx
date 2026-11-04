@@ -294,7 +294,7 @@ const FEATURES = [
   {
     icon: Sparkles,
     title: "What's new, folder-wide",
-    body: "A feed of every file that changed since you last opened it, with what changed in each. The history stays in the app's data dir, never in your folder.",
+    body: "A feed of every file that changed since you last opened it, with what changed in each, including files git never sees, like git-ignored agent memory, skills and plans. The history stays in the app's data dir, never in your folder.",
   },
   {
     icon: ShoppingBasket,
@@ -314,7 +314,7 @@ const FEATURES = [
   {
     icon: EyeOff,
     title: "Hidden files, handled",
-    body: "Git-ignored files are hidden by default and one toggle away. Secrets like .env stay locked and open read-only after a confirm.",
+    body: "A short list (.git, node_modules, __pycache__, .venv) is hidden for you, but never files git tracks. Right-click anything else to hide it. One button lists everything hidden, with a checkbox to show each item. Git-ignored files stay visible unless you hide them. .env files and private keys stay locked and open read-only after a confirm.",
   },
   {
     icon: ShieldCheck,

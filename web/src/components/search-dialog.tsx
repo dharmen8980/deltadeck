@@ -16,8 +16,11 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { FileKindIcon } from "@/components/file-icon";
 import { api, errorMessage, type ContentHit, type ContentMatch, type FileKind, type SearchResponse } from "@/lib/api";
+import { useGitIgnored } from "@/lib/git-ignored";
 import { dirname } from "@/lib/paths";
 import { searchCoverageHint, searchCoverageNotice } from "@/lib/search-coverage";
+import { IGNORED_CLASS, IGNORED_NOTE } from "@/lib/tree";
+import { cn } from "@/lib/utils";
 
 const TYPE_CHIPS = ["md", "mmd", "docx", "py", "sh", "json", "jsonl", "log", "out", "txt", "csv"];
 const ALL = "__all__";
@@ -73,6 +76,7 @@ export function SearchDialog({
   const [busy, setBusy] = useState(false);
   const [retryTick, setRetryTick] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
+  const gitIgnored = useGitIgnored();
 
   const query = q.trim();
   const key = `${query}|${folder}|${types.join(",")}`;
@@ -187,6 +191,8 @@ export function SearchDialog({
                       key={`n:${n.path}`}
                       value={`n:${n.path}`}
                       onSelect={() => choose({ path: n.path, kind: n.kind, query })}
+                      className={cn(gitIgnored.has(n.path) && IGNORED_CLASS)}
+                      title={gitIgnored.has(n.path) ? `${n.path} · ${IGNORED_NOTE}` : undefined}
                     >
                       <FileKindIcon kind={n.kind} className="text-muted-foreground" />
                       <span className="truncate font-medium">{n.name}</span>
@@ -203,6 +209,8 @@ export function SearchDialog({
                       <CommandItem
                         value={`c:${hit.path}`}
                         onSelect={() => choose({ path: hit.path, kind: hit.kind, match: hit.matches[0], query })}
+                        className={cn(gitIgnored.has(hit.path) && IGNORED_CLASS)}
+                        title={gitIgnored.has(hit.path) ? `${hit.path} · ${IGNORED_NOTE}` : undefined}
                       >
                         <FileKindIcon kind={hit.kind} className="text-muted-foreground" />
                         <span className="truncate font-medium">{hit.path}</span>

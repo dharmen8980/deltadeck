@@ -57,7 +57,8 @@ function send(method: string, url: string, json?: unknown, signal?: AbortSignal)
   return fetch(url, { method, headers, body, signal, cache: "no-store", credentials: "same-origin", redirect: "error" });
 }
 
-async function request<T>(method: string, url: string, json?: unknown, signal?: AbortSignal): Promise<T> {
+/** A request through the roots gate (X-Root-Token, JSON body; one retry with a fresh token on 403). Also used by hiding-api. */
+export async function request<T>(method: string, url: string, json?: unknown, signal?: AbortSignal): Promise<T> {
   let res: Response;
   try {
     res = await send(method, url, json, signal);

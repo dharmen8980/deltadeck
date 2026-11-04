@@ -14,6 +14,8 @@ Your agent just rewrote six markdown specs, a mermaid diagram and some code,
 and nothing is committed yet. `git diff` shows raw lines since the last commit.
 DeltaDeck shows what changed since **you** last read each file, inside the
 rendered document, and turns your review notes into one prompt for the agent.
+It tracks files git never sees too, such as git-ignored agent memory, skills
+and plans.
 
 ## How a review goes
 
@@ -66,8 +68,11 @@ uninstalling are covered in [Installing](https://github.com/dharmen8980/deltadec
 - Files open read-only. **Edit** is a button you press per file, and
   `--read-only` removes it altogether. Saves are conflict-checked and keep a
   version history, and deletes go to a Trash. See [Editing](https://github.com/dharmen8980/deltadeck/blob/main/docs/editing.md).
-- Files git ignores are hidden. Protected files like `.env` open read-only
-  after a confirmation. See [Layout](https://github.com/dharmen8980/deltadeck/blob/main/docs/layout.md#hidden-files) and the
+- A short built-in list (`.git`, `node_modules`, `__pycache__`, `.venv`, ...)
+  is hidden, but never files git tracks. The eye
+  button in the sidebar lists everything hidden; check an item to show it, or
+  right-click any file to hide it. Git-ignored files show by default.
+  Protected files (`.env`, `.env.*`, `*.pem`, `*.key`) open read-only after a confirmation. See [Layout](https://github.com/dharmen8980/deltadeck/blob/main/docs/layout.md#hidden-files) and the
   [Security model](https://github.com/dharmen8980/deltadeck/blob/main/docs/security.md).
 
 ## Also in the box

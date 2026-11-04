@@ -99,7 +99,7 @@ def test_commit_needs_a_visible_file(c):
 
 
 @pytest.mark.parametrize("bad", ["../alpha/a.md", "/etc/passwd", "a/../a.md", "./a.md", "docs//x.md",
-                                 "docs/", ".env", "docs/.env.local", "my-secret.md", "a\\b", "", "a\0b",
+                                 "docs/", ".env", "docs/.env.local", ".ENV.production", "a\\b", "", "a\0b",
                                  "node_modules/x.md"])
 def test_path_refusals(c, bad):
     assert seen_post(c, "commit", {"path": bad, "mtime": 1, "size": 1, "text": "x"}).status_code in (400, 403)

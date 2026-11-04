@@ -7,7 +7,11 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { type FileEntry, type TreeResponse } from "@/lib/api";
 import { formatBytes, formatRelative, formatTime } from "@/lib/format";
 import { viewerHref } from "@/lib/paths";
-import { sortDirs, sortFiles, type DirNode, type SortMode } from "@/lib/tree";
+import { IGNORED_CLASS, IGNORED_NOTE, sortDirs, sortFiles, type DirNode, type SortMode } from "@/lib/tree";
+import { cn } from "@/lib/utils";
+
+/** A git-ignored row: dimmed, and its title says so. */
+const ignoredProps = (e: { path: string; ignored?: boolean }) => (e.ignored ? { title: `${e.path} · ${IGNORED_NOTE}` } : {});
 
 function go(e: React.MouseEvent, path: string, onOpen: (p: string) => void) {
   if (e.metaKey || e.ctrlKey || e.shiftKey || e.button !== 0) return;
@@ -16,9 +20,8 @@ function go(e: React.MouseEvent, path: string, onOpen: (p: string) => void) {
 }
 
 export function FolderView({ node, sort, onOpen }: { node: DirNode; sort: SortMode; onOpen: (p: string) => void }) {
-  // Hidden items show (dimmed) in the sidebar only.
-  const dirs = sortDirs(node.dirs.filter((d) => !d.hidden), sort);
-  const files = sortFiles(node.files.filter((f) => !f.hidden), sort);
+  const dirs = sortDirs(node.dirs, sort);
+  const files = sortFiles(node.files, sort);
   return (
     <div className="mx-auto max-w-5xl p-4 md:p-6">
       <h1 className="mb-4 flex items-center gap-2 text-xl font-semibold">
@@ -36,7 +39,7 @@ export function FolderView({ node, sort, onOpen }: { node: DirNode; sort: SortMo
           </TableHeader>
           <TableBody>
             {dirs.map((d) => (
-              <TableRow key={d.path}>
+              <TableRow key={d.path} className={cn(d.ignored && IGNORED_CLASS)} {...ignoredProps(d)}>
                 <TableCell>
                   <a href={viewerHref(d.path)} onClick={(e) => go(e, d.path, onOpen)} className="flex items-center gap-2 hover:underline">
                     <FolderIcon className="size-4 text-muted-foreground" /> {d.name}/
@@ -47,7 +50,7 @@ export function FolderView({ node, sort, onOpen }: { node: DirNode; sort: SortMo
               </TableRow>
             ))}
             {files.map((f) => (
-              <TableRow key={f.path}>
+              <TableRow key={f.path} className={cn(f.ignored && IGNORED_CLASS)} {...ignoredProps(f)}>
                 <TableCell>
                   <a href={viewerHref(f.path)} onClick={(e) => go(e, f.path, onOpen)} className="flex items-center gap-2 hover:underline">
                     <FileKindIcon kind={f.kind} className="size-4 text-muted-foreground" /> {f.name}
@@ -109,12 +112,13 @@ export function HomeView({
       <section>
         <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-muted-foreground">Folders</h2>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          {sortDirs(root.dirs.filter((d) => !d.hidden), "name").map((d) => (
+          {sortDirs(root.dirs, "name").map((d) => (
             <a
               key={d.path}
               href={viewerHref(d.path)}
               onClick={(e) => go(e, d.path, onOpen)}
-              className="flex items-center gap-3 rounded-lg border p-3 transition-colors hover:bg-muted"
+              className={cn("flex items-center gap-3 rounded-lg border p-3 transition-colors hover:bg-muted", d.ignored && IGNORED_CLASS)}
+              {...ignoredProps(d)}
             >
               <FolderIcon className="size-5 shrink-0 text-muted-foreground" />
               <div className="min-w-0">
@@ -125,12 +129,13 @@ export function HomeView({
               </div>
             </a>
           ))}
-          {sortFiles(root.files.filter((f) => !f.hidden), "name").map((f) => (
+          {sortFiles(root.files, "name").map((f) => (
             <a
               key={f.path}
               href={viewerHref(f.path)}
               onClick={(e) => go(e, f.path, onOpen)}
-              className="flex items-center gap-3 rounded-lg border p-3 transition-colors hover:bg-muted"
+              className={cn("flex items-center gap-3 rounded-lg border p-3 transition-colors hover:bg-muted", f.ignored && IGNORED_CLASS)}
+              {...ignoredProps(f)}
             >
               <FileKindIcon kind={f.kind} className="size-5 shrink-0 text-muted-foreground" />
               <div className="min-w-0">
@@ -151,7 +156,8 @@ export function HomeView({
               <a
                 href={viewerHref(f.path)}
                 onClick={(e) => go(e, f.path, onOpen)}
-                className="flex items-center gap-3 px-3 py-2 text-sm hover:bg-muted"
+                className={cn("flex items-center gap-3 px-3 py-2 text-sm hover:bg-muted", f.ignored && IGNORED_CLASS)}
+                {...ignoredProps(f)}
               >
                 <FileKindIcon kind={f.kind} className="size-4 shrink-0 text-muted-foreground" />
                 <span className="min-w-0 flex-1 truncate">{f.path}</span>

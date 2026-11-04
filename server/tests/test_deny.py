@@ -7,29 +7,34 @@ from conftest import running, write
 DENIED = {
     ".env": "zqdenyenv",
     ".env.local": "zqdenyenvlocal",
-    "api_token.txt": "zqdenytoken",
-    "my_secret.md": "zqdenysecret",
-    "aws_credentials.json": '{"k": "zqdenycred"}',
+    ".env.production": "zqdenyenvprod",
+    ".env.d/plain.txt": "zqdenyfolder",
+    ".ENV.STAGING": "zqdenyupper",
     "server.pem": "zqdenypem",
-    "id.key": "zqdenykey",
-    "secrets/plain.txt": "zqdenyfolder",
-    "API_TOKEN.TXT": "zqdenyupper",
+    "ID.KEY": "zqdenykey",
 }
-WORDS = ["zqdenyenv", "zqdenyenvlocal", "zqdenytoken", "zqdenysecret", "zqdenycred", "zqdenypem",
-         "zqdenykey", "zqdenyfolder", "zqdenyupper", "zqdeny"]
+WORDS = ["zqdenyenv", "zqdenyenvlocal", "zqdenyenvprod", "zqdenyfolder", "zqdenyupper", "zqdenypem", "zqdenykey",
+         "zqdeny"]
+# only .env files and private keys are protected: names that merely look sensitive, and .env templates, are not
+NOT_DENIED = {
+    "credentials.py": "zqfreecred",
+    "token_utils.ts": "zqfreetoken",
+    "secrets.md": "zqfreesecret",
+    "id.keys": "zqfreekeys",
+    ".env.example": "zqfreeexample",
+    ".env.local.sample": "zqfreesample",
+    ".env.template": "zqfreetemplate",
+    ".envrc": "zqfreeenvrc",
+}
 
 
 def make(root):
-    for rel, text in DENIED.items():
-        if rel == "API_TOKEN.TXT" and os.path.exists(root / "api_token.txt"):
-            write(root / "sub" / rel, text)  # case-insensitive filesystems
-        else:
-            write(root / rel, text)
+    for rel, text in {**DENIED, **NOT_DENIED}.items():
+        write(root / rel, text)
     write(root / "ok.md", "visible zqokword\n")
     os.symlink(".env", root / "innocent.md")
     write(root / "__pycache__" / "x.cpython-313.pyc", "zqdenypyc")
     write(root / ".DS_Store", "zqdenyds")
-    write(root / "mod.pyc", "zqdenypyc2")
 
 
 def test_denied_refused_everywhere(root):
@@ -37,57 +42,90 @@ def test_denied_refused_everywhere(root):
     with running(root) as c:
         tree = c.get("/api/tree").json()
         paths = {f["path"] for f in tree["files"]}
-        assert paths == {"ok.md"}, paths
-        assert tree["dirs"] == [] or set(tree["dirs"]) <= {"sub"}
-        targets = list(DENIED) + ["sub/API_TOKEN.TXT", "innocent.md", "secrets", "SECRETS/plain.txt"]
+        assert paths == {"ok.md", *NOT_DENIED}, paths
+        assert tree["dirs"] == []
+        targets = list(DENIED) + ["innocent.md", ".env.d", ".ENV.D/plain.txt", ".env.LOCAL"]
         for rel in targets:
             for ep in ("/api/file", "/api/content", "/api/text", "/api/raw", "/api/csv"):
                 r = c.get(ep, params={"path": rel})
                 assert r.status_code in (403, 404), (ep, rel, r.status_code)
                 assert b"zqdeny" not in r.content
         # ignore-list files are left out of the tree and search, but readable when opened
-        for rel in (".DS_Store", "__pycache__/x.cpython-313.pyc", "mod.pyc"):
+        for rel in (".DS_Store", "__pycache__/x.cpython-313.pyc"):
             for ep in ("/api/file", "/api/content", "/api/text", "/api/raw"):
                 assert c.get(ep, params={"path": rel}).status_code == 200, (ep, rel)
             assert c.get("/api/file", params={"path": rel}).json()["hidden"] == "ignore"
         for w in WORDS:
             res = c.get("/api/search", params={"q": w}).json()
             assert res["content"] == [] and res["names"] == [], w
-        for q in ["token", "secret", "credential", "env", "pem", "key"]:
-            res = c.get("/api/search", params={"q": q}).json()
-            assert res["names"] == [], q
+        res = c.get("/api/search", params={"q": "production"}).json()
+        assert res["names"] == []
+        for rel, word in NOT_DENIED.items():
+            assert c.get("/api/file", params={"path": rel}).json().get("hidden") is None, rel
+            assert c.get("/api/search", params={"q": word}).json()["content"][0]["path"] == rel
         assert c.get("/api/search?q=zqokword").json()["content"][0]["path"] == "ok.md"
 
 
 def test_custom_deny_and_no_default(root):
     write(root / "internal_notes.md", "zqcustomword\n")
-    write(root / "my_secret.md", "zqsecretword\n")
+    write(root / ".env", "zqenvword\n")
+    write(root / ".env.example", "zqexampleword\n")
     write(root / "plain.md", "zqplainword\n")
     with running(root, deny=["internal*"]) as c:
         paths = {f["path"] for f in c.get("/api/tree").json()["files"]}
-        assert paths == {"plain.md"}
+        assert paths == {"plain.md", ".env.example"}
         assert c.get("/api/file?path=internal_notes.md").status_code == 403
         assert c.get("/api/search?q=zqcustomword").json()["content"] == []
     with running(root, no_default_deny=True) as c:
         paths = {f["path"] for f in c.get("/api/tree").json()["files"]}
-        assert paths == {"plain.md", "my_secret.md", "internal_notes.md"}
-        assert c.get("/api/search?q=zqsecretword").json()["content"][0]["path"] == "my_secret.md"
+        assert paths == {"plain.md", ".env", ".env.example", "internal_notes.md"}
+        assert c.get("/api/search?q=zqenvword").json()["content"][0]["path"] == ".env"
     with running(root, no_default_deny=True, deny=["*notes*"]) as c:
         paths = {f["path"] for f in c.get("/api/tree").json()["files"]}
-        assert paths == {"plain.md", "my_secret.md"}
+        assert paths == {"plain.md", ".env", ".env.example"}
+    # a --deny pattern also covers the templates the built-in ones leave out
+    with running(root, deny=["*.example"]) as c:
+        paths = {f["path"] for f in c.get("/api/tree").json()["files"]}
+        assert paths == {"plain.md", "internal_notes.md"}
+        assert c.get("/api/file?path=.env.example").status_code == 403
+
+
+def test_deny_fast_path_matches_is_denied(root):
+    """The walker's one-regex name test agrees with is_denied / is_hidden, exceptions included."""
+    from deltadeck.config import Settings
+    from deltadeck.paths import PathGuard
+
+    names = [".env", ".ENV", ".env.local", ".env.example", ".env.local.example", ".env.SAMPLE", ".env.template",
+             ".envrc", ".env-local", "x.env", "credentials.py", "node_modules", "venv", "__pycache__", "a.pyc",
+             ".git", ".deltadeck-tmp-1", "build", "dist", "notes.example"]
+    for kw in ({}, {"deny": ["*.example"]}, {"no_default_deny": True}, {"no_default_deny": True, "deny": [".env*"]},
+               {"deny": [".env.*"]}, {"deny": [".ENV.*"]}):
+        g = PathGuard(Settings.make(str(root), **kw))
+        for n in names:
+            assert g.is_hidden_fast(n) == (g.is_hidden(n) or g.is_always_hidden(n)), (kw, n)
+    g = PathGuard(Settings.make(str(root)))
+    assert [n for n in names if g.is_denied(n)] == [".env", ".ENV", ".env.local"]
+    g = PathGuard(Settings.make(str(root), deny=["*.example"]))
+    assert {".env.example", ".env.local.example", "notes.example"} <= {n for n in names if g.is_denied(n)}
+    assert not g.is_denied(".env.template")
+    # a --deny copy of a built-in pattern stays strict: it covers the templates too
+    for pat in (".env.*", ".ENV.*"):
+        g = PathGuard(Settings.make(str(root), deny=[pat]))
+        assert g.is_denied(".env.example") and g.is_denied(".env.local.sample") and g.is_denied(".env.local")
 
 
 def test_settings_from_args_and_env(root):
-    from deltadeck.config import settings_from_args
+    from deltadeck.config import DEFAULT_DENY_EXCEPT, settings_from_args
 
     s = settings_from_args(["--root", str(root), "--deny", "a*", "--ignore", "b*", "--port", "9000"],
                            env={"DELTADECK_DENY": "c*, d*", "DELTADECK_IGNORE": "e*"})
     assert s.port == 9000 and s.root == os.path.realpath(root)
-    assert {".env", "*token*", "a*", "c*", "d*"} <= set(s.deny)
-    assert {"__pycache__", "b*", "e*"} <= set(s.ignore)
+    assert set(s.deny) == {".env", ".env.*", "*.pem", "*.key", "a*", "c*", "d*"}
+    assert s.deny_except == DEFAULT_DENY_EXCEPT
+    assert {"__pycache__", "node_modules", "b*", "e*"} <= set(s.ignore)
     s = settings_from_args(["--no-default-deny"], env={"DELTADECK_ROOT": str(root), "DELTADECK_PORT": "9001",
                                                        "DELTADECK_SEARCH_MAX_MB": "1"})
-    assert s.deny == () and s.port == 9001 and s.search_max_bytes == 1024 * 1024
+    assert s.deny == () and s.deny_except == () and s.port == 9001 and s.search_max_bytes == 1024 * 1024
 
 
 def test_former_env_prefix_still_read(root):

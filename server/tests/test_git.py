@@ -64,7 +64,7 @@ def test_status_counts_and_kinds(repo):
 
 def test_status_hides_denied_and_ignored(repo):
     write(repo / "docs" / ".env", "SECRET=2\n")  # modified, but denied
-    write(repo / "notes-secret.md", "x\n")  # untracked, denied
+    write(repo / ".env.local", "x\n")  # untracked, denied
     write(repo / "node_modules" / "m.js", "x\n")  # ignored folder
     with running(repo) as c:
         assert files_of(c) == {}
@@ -114,17 +114,17 @@ def test_file_head_versions(repo):
 def test_denied_file_in_history_is_refused(repo):
     (repo / "docs" / ".env").unlink()  # still in HEAD, deleted on disk
     g(repo, "rm", "-q", "--cached", "docs/.env")
-    write(repo / "SECRET.md", "s\n")
-    g(repo, "add", "SECRET.md")
+    write(repo / ".ENV.PROD", "s\n")
+    g(repo, "add", ".ENV.PROD")
     g(repo, "commit", "-q", "-m", "secret")
-    os.unlink(repo / "SECRET.md")
+    os.unlink(repo / ".ENV.PROD")
     with running(repo) as c:
-        for p in ("docs/.env", "SECRET.md", "secret.md", "docs/./.env", "docs/x/../.env"):
+        for p in ("docs/.env", ".ENV.PROD", ".env.prod", "docs/./.env", "docs/x/../.env"):
             r = c.get("/api/git/file", params={"path": p})
             assert r.status_code in (400, 403), (p, r.text)
             assert "SECRET" not in r.text and "s\\n" not in r.text
             assert c.get("/api/git/blame", params={"path": p}).status_code in (400, 403, 404)
-        assert "SECRET.md" not in files_of(c)
+        assert ".ENV.PROD" not in files_of(c)
 
 
 def test_renamed_file_head_version(repo):

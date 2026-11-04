@@ -16,10 +16,10 @@ it still exists) and otherwise starts with no folder selected. The former
 | Lock the root | `--lock-root` | `DELTADECK_LOCK_ROOT=1` | off (the browser may switch folders); needs a root |
 | Port | `--port N` | `DELTADECK_PORT` | `8765` |
 | Host | none | none | always `127.0.0.1` (hardcoded, not configurable) |
-| Deny patterns (add) | `--deny PATTERN` (repeatable) | `DELTADECK_DENY` (comma-separated) | `.env`, `.env*`, `*token*`, `*secret*`, `*credential*`, `*.pem`, `*.key` |
+| Deny patterns (add) | `--deny PATTERN` (repeatable) | `DELTADECK_DENY` (comma-separated) | `.env` and `.env.*` (such as `.env.local`, `.env.production`), `*.pem`, `*.key`; templates (`.env.example`, `.env.sample`, `.env.template`) stay visible |
 | Drop default deny list | `--no-default-deny` | none | off |
 | Never show denied files | `--no-reveal` | `DELTADECK_NO_REVEAL=1` | off: a denied file can be shown read-only on request; see [Hidden files](#hidden-files) |
-| Ignore patterns (add) | `--ignore PATTERN` (repeatable) | `DELTADECK_IGNORE` (comma-separated) | `__pycache__`, `*.pyc`, `.DS_Store`, `node_modules`, `.venv`, `.git`, `.deltadeck-tmp-*`, `.ldv-tmp-*` |
+| Ignore patterns (add) | `--ignore PATTERN` (repeatable) | `DELTADECK_IGNORE` (comma-separated) | the built-in list: `.git`, `.DS_Store`, `node_modules`, `__pycache__`, `.venv`, `venv` and DeltaDeck's temp files (`.deltadeck-tmp-*`, `.ldv-tmp-*`). Patterns given here apply even to files git tracks; you can still show a single item in Hidden files. |
 | Search size limit | `--search-max-mb N` | `DELTADECK_SEARCH_MAX_MB` | `2` (larger files are not indexed for content search) |
 | Search: files indexed in all | `--search-max-files N` | `DELTADECK_SEARCH_MAX_FILES` | `100000` (see [Search index](#search-index)) |
 | Search: total size indexed | `--search-max-total-mb N` | `DELTADECK_SEARCH_MAX_TOTAL_MB` | `2048` (the indexed files' sizes added up; a `.docx` counts its file size) |
@@ -47,7 +47,7 @@ listed, searched or tracked, but it opens when asked for by path.
 Example:
 
 ```sh
-uv run deltadeck --root ~/notes --port 9000 --deny '*.sqlite' --ignore 'dist'
+uv run deltadeck --root ~/notes --port 9000 --deny '*.sqlite' --ignore '*.sqlite'
 ```
 
 `.deltadeck-tmp-*` (the editor's temporary files during an atomic save; also
@@ -56,29 +56,87 @@ shows in the tree or search.
 
 ## Hidden files
 
-Three kinds of items are hidden from the tree, search, What's new and change
+Four kinds of items are hidden from the tree, search, What's new and change
 events:
 
-- **Git-ignored.** When the folder is inside a git repository, files and
-  folders git ignores (`.gitignore`, `.git/info/exclude`, the global excludes
-  file) are hidden like ignored ones. Files git tracks stay visible, even when
-  an ignore pattern matches them. Outside a repository, or with `--git off`,
-  nothing is hidden this way.
-- **Ignored.** Names on the ignore list.
-- **Denied.** Names on the deny list. These are protected.
+- **Ignored.** Names on the built-in ignore list, plus `--ignore` patterns. The
+  built-in list is kept basic:
 
-With "Show hidden files" in the sidebar filter menu, hidden items show in the
-tree, dimmed. Hidden folders are never scanned, and changes inside them are
-ignored; their contents are listed when you expand them. Hidden files open with
-a note that they are hidden. Git-ignored files open normally; ignore-list files
-open read-only. A denied file asks first and then shows read-only.
-`--no-reveal` turns that off, and denied names are then not listed either.
+  ```
+  .git .DS_Store node_modules __pycache__ .venv venv .deltadeck-tmp-* .ldv-tmp-*
+  ```
+
+  Build output (`dist`, `build`, `out`, `target`, ...) and other caches are
+  not on it, so they show like any other folder. Hide one yourself with
+  right-click **Hide**, a pattern in **Hidden files**, or `--ignore`. A
+  built-in entry never hides a file git tracks: the folders on the path to a
+  tracked file stay visible, and only the untracked files around it are
+  hidden. A committed `vendor/node_modules/patched.js` shows, while the rest
+  of that `node_modules` folder (untracked) is hidden. Git is asked
+  when the folder opens, about a second after git's index changes (a commit
+  or `git add`), at each backstop pass and when Hidden files opens.
+- **Hidden by you.** Patterns added with **Hide a pattern...**, and single
+  items hidden with right-click **Hide** or by unchecking them in **Hidden
+  files**.
+- **Git-ignored.** Shown by default, so git-ignored files (agent memory,
+  plans, local notes) are tracked like any other file. Uncheck an item in
+  Hidden files to hide it. Uncheck the Git-ignored group to hide all of them,
+  also ones created later. While the group is unchecked and the folder is
+  inside a git repository, files and folders git ignores
+  (`.gitignore`, `.git/info/exclude`, the global excludes file) are hidden.
+  Files git tracks stay visible, even when an ignore pattern matches them.
+  Outside a repository, or with `--git off`, nothing is hidden this way.
+- **Denied.** Names on the deny list: `.env` and `.env.*` (such as
+  `.env.local`), private keys (`*.pem`, `*.key`), plus `--deny` patterns. These are protected. Templates
+  (`.env.example`, `.env.sample`, `.env.template`) are not. Other names, such
+  as `credentials.py` or `secrets.md`, are not protected unless you add a
+  `--deny` pattern.
+
+Your rules work like `.gitignore` lines:
+
+- `name` or `*.log` (no `/`) matches at any depth.
+- `/docs/old` or `packages/*/dist` is relative to the folder.
+- A trailing `/` is optional.
+- Matching ignores case.
+- There is no `!` negation and no `**`.
+
+A matching folder is hidden with everything inside it. At most 500 rules per
+folder, each up to 512 characters.
+
+Which one wins:
+
+1. Protected (denied) names are always hidden.
+2. A choice you made for one item, shown or hidden, comes next.
+3. Then your patterns, the ignore list and git, in that order. A pattern of
+   yours also hides tracked files.
+4. A choice for an item inside a hidden folder wins over the folder: the
+   folder shows with only that item, and the rest stays hidden.
+5. A folder you hid hides everything in it.
+
+Your patterns, the items you showed or hid and the git-ignored choice are
+stored per folder in `<data dir>/roots/<key>/hiding.json`, never in the
+folder, and they also work with `--read-only`. They are off when the data dir
+overlaps the folder. At most 500 patterns and 5000 single items per folder.
+Changes apply at once; scanning and indexing a big folder you show goes on in
+the background, and the tree and search fill in as it finishes.
+
+Hidden folders are never scanned, and changes inside them are ignored; Hidden
+files lists their contents when you expand them. Hidden files still open,
+with a note that they are hidden. Git-ignored files and files you hid open
+normally and can be edited; hidden ignore-list files open read-only. A denied
+file asks first and then shows read-only. `--no-reveal` turns that off, and
+denied names are then not listed either.
 
 `.git`, `.deltadeck-tmp-*` and the data dir are never shown.
 
-A change to a `.gitignore` in the folder applies at the next watcher event.
-Rules from elsewhere (a `.gitignore` above the folder, global excludes) apply
-at the next backstop pass.
+Visible git-ignored files and folders are marked in the tree (`"ignored"` on a
+file, `"ignored_dirs"` for folders, with everything inside an ignored folder)
+and show dimmed. A change to a `.gitignore` in the folder applies at the next
+watcher event, to the marks and, while git-ignored files are hidden, to what
+is hidden; a change to git's index (`git add -f`, `git rm --cached`, a
+checkout) about a second later. Rules from elsewhere (a
+`.gitignore` above the folder, global excludes) apply at the next backstop
+pass.
 
 ## Change detection
 

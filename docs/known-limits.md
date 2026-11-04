@@ -193,12 +193,28 @@
     ignore can make the Uncommitted list slow, time out (20 s) or exceed the
     32 MB output cap (413). Add it to `.gitignore` or `--ignore` it.
   - Hidden files (see [Hidden files](configuration.md#hidden-files)): an open
-    hidden file does not reload live. Rules from a `.gitignore` above the
-    folder and the global excludes file apply at the next backstop pass.
-    Nested repositories' own ignore rules are not applied. A folder that git
-    reports as ignored as a whole stays hidden until git is asked again.
-    Opening an ignored folder as the root hides nothing by git. When git is
-    slow or fails, git-ignored files show as before until the next try.
+    hidden file does not reload live. While git-ignored files are hidden:
+    rules from a `.gitignore` above the folder and the global excludes file
+    apply at the next backstop pass; nested repositories' own ignore rules
+    are not applied; a folder that git reports as ignored as a whole stays
+    hidden until git is asked again; opening an ignored folder as the root
+    hides nothing by git; and when git is slow or fails, git-ignored files
+    show until the next try. Hiding them runs git once, which can take up
+    to 10 s in a big repository.
+  - Hide rules changed by another viewer process sharing the data dir apply
+    after a folder switch or restart.
+  - A file newly committed inside an ignore-list folder (for example
+    `node_modules/`) shows about a second after git's index changes. When the folder
+    is a subfolder of the repository, git's index is not watched, so it shows
+    at the next backstop pass or when you open Hidden files.
+    Past 200,000 tracked files inside ignore-list folders, the rest stay
+    hidden; show them in Hidden files.
+  - Large git-ignored folders (data sets, logs, build output such as `dist`
+    or `build`, which are not on the built-in list) are now scanned, watched and indexed; hide them in Hidden
+    files, or uncheck the Git-ignored group, if the tree or search gets slow
+    or reaches the search caps.
+  - A Hidden files count stops at 10,000 files per folder ("10,000+"), and
+    the list shows at most 5000 items.
 - Folders that contain only hidden symlinks still appear as empty folders.
 - macOS and Linux only: the write path relies on POSIX `dir_fd`/`O_NOFOLLOW`
   file operations, so native Windows is not supported (WSL should work).

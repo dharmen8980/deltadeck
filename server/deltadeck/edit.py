@@ -96,8 +96,9 @@ class WriteGuard:
             raise EditError(400, "name must not start with a space or end with a space or dot")
         if self.guard.is_denied(name):
             raise EditError(403, f"name is not allowed (deny list): {name}")
-        if self.guard.is_ignored(name):
-            raise EditError(403, f"name is not allowed (ignore list): {name}")
+        if self.guard.is_always_hidden(name):
+            raise EditError(403, f"name is not allowed: {name}")
+        # an ignore-list name is judged by path (locate): in a folder git tracks, or shown, it is fine
 
     def split(self, rel) -> list[str]:
         if not isinstance(rel, str) or rel.strip() == "":
@@ -147,7 +148,7 @@ class WriteGuard:
                 names.append(c)
                 st = None
                 continue
-            if self.guard.is_hidden(name):
+            if self.guard.is_denied(name) or self.guard.is_always_hidden(name):
                 raise EditError(403, "path is not allowed")
             p = os.path.join(cur, name)
             try:
@@ -169,6 +170,11 @@ class WriteGuard:
         if self.guard.excluded and self.guard.is_excluded(abs_path):
             raise EditError(403, "path is not allowed")
         rel_out = "/".join(names)
+        v = self.guard.verdict(rel_out)  # what git ignores stays editable, like files you hid
+        if v.kind == "never" or v.reason == "deny" and v.kind == "hidden":
+            raise EditError(403, "path is not allowed: protected")
+        if v.kind == "hidden" and v.reason == "ignore":
+            raise EditError(403, f"path is not allowed: it would be hidden (ignore list: {v.rule})")
         if st is not None:
             try:  # the read gate must agree (deny on disk names, realpath inside the root)
                 self.guard.resolve(rel_out)

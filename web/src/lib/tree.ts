@@ -1,5 +1,5 @@
 // Pure (no DOM, no React, no "@/" value imports): unit tested with node --test.
-import type { FileEntry, HiddenEntry, HiddenListResponse, HiddenReason, TreeResponse } from "@/lib/api";
+import type { FileEntry, TreeResponse } from "@/lib/api";
 import { basename, dirname } from "./paths.ts";
 
 export interface DirNode {
@@ -10,36 +10,19 @@ export interface DirNode {
   /** Max mtime of all descendants (0 if empty). */
   mtime: number;
   fileCount: number;
-  /** a hidden folder: its children are not in the tree, they are listed when it is opened */
-  hidden?: HiddenReason;
+  /** git ignores it (or a folder above it); shown dimmed */
+  ignored?: boolean;
 }
+
+/** Visible git-ignored rows: dimmed, with this note in their title. */
+export const IGNORED_CLASS = "opacity-60";
+export const IGNORED_NOTE = "ignored by git";
 
 export type SortMode = "name" | "mtime";
 
 const collator = new Intl.Collator(undefined, { numeric: true, sensitivity: "base" });
 
-const hiddenDir = (e: HiddenEntry): DirNode => ({
-  path: e.path,
-  name: e.name,
-  dirs: [],
-  files: [],
-  mtime: 0,
-  fileCount: 0,
-  hidden: e.reason,
-});
-
-const hiddenFile = (e: HiddenEntry): FileEntry => ({
-  path: e.path,
-  name: e.name,
-  size: e.size ?? 0,
-  mtime: e.mtime ?? 0,
-  kind: e.kind ?? "binary",
-  ext: e.ext ?? "",
-  hidden: e.reason,
-});
-
-/** `hidden`: add the tree's hidden items (dimmed rows); they do not count in folder counts or times. */
-export function buildTree(tree: TreeResponse, opts?: { hidden?: boolean }): DirNode {
+export function buildTree(tree: TreeResponse): DirNode {
   const root: DirNode = { path: "", name: "", dirs: [], files: [], mtime: 0, fileCount: 0 };
   const byPath = new Map<string, DirNode>([["", root]]);
   const ensure = (path: string): DirNode => {
@@ -52,19 +35,15 @@ export function buildTree(tree: TreeResponse, opts?: { hidden?: boolean }): DirN
     return node;
   };
   for (const d of tree.dirs) if (d) ensure(d);
-  for (const f of tree.files) ensure(dirname(f.path)).files.push(f);
-  if (opts?.hidden && tree.hidden) {
-    for (const e of tree.hidden) {
-      const parent = ensure(dirname(e.path));
-      if (e.dir) parent.dirs.push(hiddenDir(e));
-      else parent.files.push(hiddenFile(e));
-    }
+  for (const d of tree.ignored_dirs ?? []) {
+    const node = d ? byPath.get(d) : undefined;
+    if (node) node.ignored = true;
   }
+  for (const f of tree.files) ensure(dirname(f.path)).files.push(f);
   const finish = (n: DirNode) => {
     let m = 0;
     let c = 0;
     for (const f of n.files) {
-      if (f.hidden) continue;
       m = Math.max(m, f.mtime);
       c++;
     }
@@ -103,11 +82,10 @@ export function findDir(root: DirNode, path: string): DirNode | null {
   return node ?? null;
 }
 
-/** The tree with only the files `keep` accepts; folders left without files are dropped, and hidden items too. */
+/** The tree with only the files `keep` accepts; folders left without files are dropped. */
 export function filterFiles(root: DirNode, keep: (f: FileEntry) => boolean): DirNode {
   const walk = (n: DirNode): DirNode | null => {
-    if (n.hidden) return null;
-    const files = n.files.filter((f) => !f.hidden && keep(f));
+    const files = n.files.filter(keep);
     const dirs = n.dirs.map(walk).filter((d): d is DirNode => d !== null);
     if (n.path && !files.length && !dirs.length) return null;
     let mtime = 0;
@@ -123,19 +101,23 @@ export function filterFiles(root: DirNode, keep: (f: FileEntry) => boolean): Dir
 }
 
 
-/** The children of an opened hidden folder (/api/hidden) as tree rows. */
-export function hiddenNodesFromList(res: HiddenListResponse): { dirs: DirNode[]; files: FileEntry[] } {
-  const dirs: DirNode[] = [];
-  const files: FileEntry[] = [];
-  for (const e of res.entries) {
-    if (e.dir) dirs.push(hiddenDir(e));
-    else files.push(hiddenFile(e));
-  }
-  return { dirs, files };
+/** Every visible file and folder git ignores (the tree's marks), for lists not built from the tree. */
+export function ignoredPaths(tree: TreeResponse): Set<string> {
+  const out = new Set<string>(tree.ignored_dirs ?? []);
+  for (const f of tree.files) if (f.ignored) out.add(f.path);
+  return out;
 }
 
-export function hiddenLabel(reason: HiddenReason): string {
-  if (reason === "git") return "Ignored by git";
-  if (reason === "ignore") return "On the viewer's ignore list";
-  return "Protected: may contain secrets";
+/** The tree without `paths` (and everything below them): hides the user just asked for, shown at
+ * once while the server applies them. */
+export function withoutHidden(tree: TreeResponse, paths: ReadonlySet<string>): TreeResponse {
+  if (!paths.size) return tree;
+  const gone = (p: string): boolean => {
+    for (let q = p; q; q = dirname(q)) if (paths.has(q)) return true;
+    return false;
+  };
+  const files = tree.files.filter((f) => !gone(f.path));
+  const dirs = tree.dirs.filter((d) => !d || !gone(d));
+  const kept = tree.ignored_dirs?.filter((d) => !gone(d));
+  return { ...tree, files, dirs, ...(kept ? { ignored_dirs: kept } : {}) };
 }

@@ -23,10 +23,50 @@ function Tooltip({
   return <TooltipPrimitive.Root data-slot="tooltip" {...props} />
 }
 
+/** Where focus comes back from when a dialog, sheet, menu or popover closes. */
+const OVERLAY =
+  "[role=dialog], [role=alertdialog], [role=menu], [data-radix-popper-content-wrapper]"
+
+/** When the user last pressed Tab: focus from nowhere (relatedTarget null) right after it is the
+ * user tabbing in (into the page, say), not focus returned by a closing overlay. */
+let lastTabAt = 0
+const TAB_FOCUS_MS = 1000
+if (typeof document !== "undefined") {
+  document.addEventListener(
+    "keydown",
+    (e) => {
+      if (e.key === "Tab") lastTabAt = Date.now()
+    },
+    true
+  )
+}
+
+/** Focus that is not the user moving it: a dialog or menu returning focus to its trigger on close
+ * (from inside the overlay, or from <body> once the overlay is gone), or the window regaining focus.
+ * Such focus does not open the tooltip; hover and Tab still do, also between triggers inside one
+ * dialog or sheet. */
+function isReturnedFocus(e: React.FocusEvent) {
+  const from = e.relatedTarget
+  if (!(from instanceof Element)) return Date.now() - lastTabAt > TAB_FOCUS_MS
+  const fromOverlay = from.closest(OVERLAY)
+  return fromOverlay !== null && fromOverlay !== e.currentTarget.closest(OVERLAY)
+}
+
 function TooltipTrigger({
+  onFocus,
   ...props
 }: React.ComponentProps<typeof TooltipPrimitive.Trigger>) {
-  return <TooltipPrimitive.Trigger data-slot="tooltip-trigger" {...props} />
+  return (
+    <TooltipPrimitive.Trigger
+      data-slot="tooltip-trigger"
+      onFocus={(e) => {
+        onFocus?.(e)
+        // Radix skips its open-on-focus handler for a prevented event.
+        if (isReturnedFocus(e)) e.preventDefault()
+      }}
+      {...props}
+    />
+  )
 }
 
 function TooltipContent({

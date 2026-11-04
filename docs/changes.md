@@ -43,6 +43,10 @@ viewer server in its data dir, never inside the folder you browse.
   you have already read, not about new files.
 - Renames and moves seen by the live updates carry the history over, so a
   renamed file does not show up as changed.
+- Git-ignored files (agent memory, plans, local notes) get dots like any
+  other file, unless you hide them (Hidden files, or the Git-ignored group
+  there). Files you hide stop
+  getting dots; their history is kept and comes back when you unhide them.
 
 ## What's new
 

@@ -22,10 +22,13 @@
   deny and ignore lists to both the requested and the resolved components.
   Outside the root or denied gives 403, missing gives 404. Denied files are
   never listed, served or indexed, except as described in [Hidden and
-  protected files](#hidden-and-protected-files). Ignored and git-ignored files
-  are readable when asked for by path, but never searched or tracked. They are
-  listed only with "Show hidden files". Ignore-list files are never edited;
-  git-ignored files stay editable when editing is on.
+  protected files](#hidden-and-protected-files). Ignored, user-hidden and
+  git-ignored files are readable when asked for by path, but never searched or
+  tracked (git-ignored files only while hiding them is on). They are listed
+  only in the Hidden files dialog (`/api/hiding/items`). Hidden ignore-list
+  files are never edited; tracked files in ignore-list folders are visible
+  and editable like any other file, and user-hidden and git-ignored files
+  stay editable when editing is on.
 - **Symlinks.** Symlinked folders are never descended into. A symlinked file is
   shown only if its target is inside the root and passes the deny list. The
   `runtime_workdir/` links that point into the repo (including `.env`) are
@@ -67,6 +70,12 @@
 
 ## Hidden and protected files
 
+- **The deny list** is `.env` and `.env.*` (such as `.env.local` and
+  `.env.production`), private keys (`*.pem`, `*.key`), plus any `--deny` patterns. Templates (`.env.example`,
+  `.env.sample`, `.env.template`) are left off it. Names are matched whole,
+  so `credentials.py` or `secrets.md` are ordinary files; add `--deny
+  PATTERN` for anything else that holds secrets. `--no-default-deny` drops
+  the built-in entries.
 - **Denied files** are served only on an explicit read with `reveal=1`, and
   only by `/api/file` (metadata), `/api/content` and `/api/text`. The request
   must be same-site (the `Sec-Fetch-Site` and `Origin` checks used for
@@ -79,14 +88,23 @@
 - **`--no-reveal`** (`DELTADECK_NO_REVEAL=1`) turns this off: `reveal=1`
   gets 403, and denied names are left out of the hidden-files listing too.
   `/api/config` reports it as `reveal_enabled`.
-- **Listings.** `GET /api/tree?hidden=1` adds the topmost hidden items of
-  visible folders. `GET /api/hidden?path=` lists the direct children of one
-  hidden folder (at most 2000). Neither reads file contents. `.git`,
+- **Listings.** `GET /api/hiding/items` lists the topmost hidden items of
+  visible folders (at most 5000), the items you showed, and visible
+  git-ignored items. `GET /api/hiding/count` counts files below up to 50 of
+  them (at most 10,000 each; symlinks not followed; within 100,000 entries or
+  1.5 s per request). `GET /api/hidden?path=` lists the direct children of
+  one hidden folder (at most 2000). `/api/tree` reports only
+  `hidden_count`. None of them reads file contents. Each item has a
+  `reason` (`deny`, `ignore`, `user` or `git`) and, for an item hidden by its
+  own name or path, the `rule` that hides it. `.git`,
   `.deltadeck-tmp-*`, the data dir and symlinked folders are never listed nor
   served, whatever the mode.
-- **Ignored and git-ignored files** are readable by every read route without
-  a flag. Ignore-list paths stay refused by `/api/edit/*`; git-ignored files
-  stay editable when editing is on, as before.
+- **Ignored, user-hidden and git-ignored files** are readable by every read
+  route without a flag. Hidden ignore-list paths stay refused by `/api/edit/*`;
+  user-hidden and git-ignored files stay editable when editing is on.
+- **User hide rules.** Patterns and single shown or hidden paths are stored
+  in the data dir, never in the folder. Showing never unhides a denied name,
+  `.git`, temp files or the data dir (400).
 
 ## The /api/seen endpoints
 
@@ -120,8 +138,9 @@ filter menu.
   written into another folder's history. With no folder selected: 409.
 - **Path checks.** Stored paths may no longer exist (deleted or renamed
   files), so every path is checked lexically: relative, normalised (no `..`,
-  `.`, empty components, backslashes or NUL), and no component may match the
-  deny or ignore lists, nor lie in what git ignores (403). Records whose names are denied later are not
+  `.`, empty components, backslashes or NUL), and the path may not be hidden
+  by the deny or ignore lists or a user hide rule, nor lie in what git
+  ignores while that is hidden (403). Records whose names are denied later are not
   returned. `commit` also requires a regular, visible file
   (`PathGuard.resolve_file`), and `mark` only records files present in the
   tree. The files are never written by these endpoints. The only read is a
@@ -139,6 +158,41 @@ filter menu.
   (`{"paths", "client"}`, no file contents) to every tab of the same folder;
   `clear` sends `{"paths": [], "client", "cleared": true}`.
 
+## The /api/hiding endpoints
+
+A folder's hidden-file settings (your hide rules, the items you showed or hid
+and the git-ignored choice) are stored by the server in
+`<data dir>/roots/<key>/hiding.json`. They are served by the same outer app as
+`/api/seen`.
+
+| Request | Result |
+|---|---|
+| `GET /api/hiding?root=` | the folder's settings: `hide_git`, `rules`, `show`, `hide`, `extra`, `always`, `deny`, `enabled`, `limits` |
+| `POST /api/hiding/update` `{root, hide_git?, add_rules?, remove_rules?, show?, hide?}` | applies the changes in one step; returns the same payload plus `applied: {hidden, shown}` |
+| `GET /api/hiding/items?root=` | the hidden items, as above |
+| `GET /api/hiding/count?root=&path=` | file counts, as above |
+
+- **Same gate as `/api/seen`.** The `GET`s must be same-site. `POST` needs the
+  `X-Root-Token`, the same-origin and loopback `Origin` checks and
+  `Content-Type: application/json`, with a 64 KB body limit. Both work with
+  `--read-only` and with `--lock-root`: they never write into the folder.
+- **One file written.** `hiding.json` is written atomically (a temp file
+  opened with `O_EXCL | O_NOFOLLOW` at mode 0600, fsync, rename), in a 0700
+  directory. A file naming another root, or one that does not parse, reads as
+  the defaults.
+- **Rule checks.** A rule may not contain NUL, a backslash or control
+  characters, nor `.`, `..` or empty components, and may not hide the whole
+  folder (`*`, `/*`, `/`). At most 500 rules per folder, 512 characters each,
+  100 new ones per request. `show` and `hide` paths (at most 500 per request,
+  5000 stored) are checked like other paths. A bad rule or path, a protected
+  path in `show`, or a path inside a folder hidden by your own rule gets 400.
+  A request is applied whole or not at all. Each update drops saved `show`
+  paths that no longer change anything (for example under a name taken off
+  the built-in list); ones inside a folder that is hidden are kept.
+- **Current folder only.** Any other root, or no folder: 409.
+- **Off when the data dir overlaps the folder.** `GET` reports
+  `enabled: false` with the reason, the defaults apply, and `POST` gets 409.
+
 ## Search index
 
 - **What is stored.** `<data dir>/search/<key>.sqlite3` (mode 0600, data dir
@@ -147,7 +201,8 @@ filter menu.
   words without accents, with their positions). It is contentless, so the text
   itself is not stored, but the words of a file and their order can largely be
   reconstructed from it: treat it like the files. Denied, ignored and
-  git-ignored files are never indexed. Tokens of a file that changes or is deleted are removed with
+  user-hidden files are never indexed, nor git-ignored ones while hiding them
+  is on. Tokens of a file that changes or is deleted are removed with
   it (on SQLite before 3.43 they are only unlinked and purged by a rebuild once
   the dead rows outnumber the live ones or their files add up to 64 MB and
   more than the live ones). The paths, sizes and mtimes of files whose
@@ -253,7 +308,8 @@ subcommands that read are used.
   --ignore-submodules=all`, `diff-index --numstat HEAD`, `ls-tree`,
   `cat-file blob`, `blame --porcelain -L` and, for the hidden files,
   `--literal-pathspecs ls-files -z --others --ignored --exclude-standard
-  --directory` (10 s timeout; 5 s for new paths). Nothing that writes refs, the
+  --directory` (10 s timeout; 5 s for new paths) and `ls-files -z --cached`
+  with the ignore-list pathspecs (used to keep tracked files visible; 10 s). Nothing that writes refs, the
   index, objects or the work tree (no checkout, so no smudge filters on
   checkout), and nothing that contacts a remote.
 - **Paths.** Requested paths go through `PathGuard.resolve_file` (a file

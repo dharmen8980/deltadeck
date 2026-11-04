@@ -11,19 +11,19 @@ export interface TreeState {
   refresh: () => Promise<void>;
 }
 
-/** `showHidden`: also list hidden items (`/api/tree?hidden=1`); the tree reloads when it changes. */
-export function useTree(showHidden = false): TreeState {
+export function useTree(): TreeState {
   const [tree, setTree] = useState<TreeResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const inflight = useRef<AbortController | null>(null);
+  const ctrlRef = useRef<AbortController | null>(null);
+  const inflight = useRef<Promise<void> | null>(null);
+  const queued = useRef<Promise<void> | null>(null);
 
-  const load = useCallback(async () => {
-    inflight.current?.abort();
+  const fetchOnce = useCallback(async () => {
     const ctrl = new AbortController();
-    inflight.current = ctrl;
+    ctrlRef.current = ctrl;
     try {
-      const t = await api.tree(ctrl.signal, { hidden: showHidden });
+      const t = await api.tree(ctrl.signal);
       if (ctrl.signal.aborted) return;
       setTree(t);
       setError(null);
@@ -31,18 +31,34 @@ export function useTree(showHidden = false): TreeState {
       if ((e as Error).name === "AbortError") return;
       setError(errorMessage(e));
     } finally {
-      if (inflight.current === ctrl) {
-        inflight.current = null;
-        setLoading(false);
-      }
+      if (ctrlRef.current === ctrl) ctrlRef.current = null;
+      if (!ctrl.signal.aborted) setLoading(false);
     }
-  }, [showHidden]);
+  }, []);
+
+  // One request at a time; calls while one is in flight share one follow-up request. Aborting and
+  // restarting instead would starve the tree during a burst of change events (a big folder
+  // filling in), so it would only update once the burst ends.
+  const load = useCallback((): Promise<void> => {
+    const start = () => {
+      const p = fetchOnce().finally(() => {
+        if (inflight.current === p) inflight.current = null;
+      });
+      inflight.current = p;
+      return p;
+    };
+    if (!inflight.current) return start();
+    queued.current ??= inflight.current.then(() => {
+      queued.current = null;
+      return start();
+    });
+    return queued.current;
+  }, [fetchOnce]);
 
   useEffect(() => {
     // Initial fetch of the tree (external system sync).
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     void load();
-    return () => inflight.current?.abort();
+    return () => ctrlRef.current?.abort();
   }, [load]);
 
   return { tree, loading, error, refresh: load };

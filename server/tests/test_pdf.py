@@ -24,9 +24,9 @@ def tree(root):
     write(root / "flow.mmd", "graph TD\n  A-->B\n")
     write(root / "script.py", "print(1)\n")
     write(root / "notes.txt", "x\n")
-    write(root / "secret.md", "# no\n")
+    write(root / ".env.md", "# no\n")
     write(root / ".env", "A=1\n")
-    write(root / "private" / "api_token.md", "# no\n")
+    write(root / "private" / ".env.local", "# no\n")
     write(root / "sub" / "ok.md", "# ok\n")
     return root
 
@@ -38,7 +38,7 @@ def test_pdf_refuses_traversal_and_denied(tree):
                   "%2Fetc%2Fpasswd"):
             r = c.get(f"/api/pdf?path={q}")
             assert r.status_code == 403, (q, r.status_code, r.text)
-        for p in ("secret.md", ".env", "private/api_token.md", "SECRET.md"):
+        for p in (".env.md", ".env", "private/.env.local", ".ENV.md"):
             r = c.get("/api/pdf", params={"path": p})
             assert r.status_code == 403, (p, r.status_code)
         assert c.get("/api/pdf", params={"path": "missing.md"}).status_code == 404

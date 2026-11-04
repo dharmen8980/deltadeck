@@ -14,8 +14,40 @@ from deltadeck.paths import PathGuard
 from deltadeck.store import Store
 
 
+@pytest.fixture(autouse=True)
+def _settle_in_the_answer(monkeypatch):
+    """A hide or show answers once the tree has followed (unless a test turns this off): tests then
+    read the tree right after the update. The server waits only briefly (hiding.SETTLE_WAIT_S)."""
+    monkeypatch.setattr("deltadeck.hiding.SETTLE_WAIT_S", 30.0)
+
+
+def write_hiding(root, data_dir, *, hide_git=False, rules=(), show=(), hide=()):
+    """The folder's saved hidden-file settings (<data dir>/roots/<key>/hiding.json, v2), as the UI
+    would leave them; read by the next create_app."""
+    from deltadeck.hiding import HidingPrefs, save_prefs
+
+    s = Settings.make(str(root), data_dir=str(data_dir))
+    save_prefs(s, HidingPrefs(hide_git, tuple(rules), tuple(show), tuple(hide)))
+
+
+def write_hiding_v1(root, data_dir, *, hide_git=False, rules=(), builtin_off=(), builtin_on=()):
+    """A v1 hiding.json (before per-path choices: exact paths were escaped anchored rules)."""
+    from deltadeck.config import write_private_json
+    from deltadeck.hiding import prefs_path
+
+    s = Settings.make(str(root), data_dir=str(data_dir))
+    write_private_json(prefs_path(s), {"version": 1, "root": s.root, "hide_git": hide_git, "rules": list(rules),
+                                       "builtin_off": list(builtin_off), "builtin_on": list(builtin_on)})
+    return prefs_path(s)
+
+
 @contextlib.contextmanager
-def running(root, *, watch=False, reconcile_interval=0, **kw):
+def running(root, *, watch=False, reconcile_interval=0, hide_git=False, **kw):
+    """hide_git=True: the folder hides git-ignored files (saved in a data dir next to the root
+    unless one is given)."""
+    if hide_git:
+        kw.setdefault("data_dir", str(root) + "-data")
+        write_hiding(root, kw["data_dir"], hide_git=True)
     settings = Settings.make(str(root), watch=watch, reconcile_interval=reconcile_interval,
                              ui_dir=str(root) + "-no-ui", **kw)
     app = create_app(settings)

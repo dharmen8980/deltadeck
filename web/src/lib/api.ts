@@ -43,6 +43,10 @@ export interface AppConfig {
   /** Per-launch token for /api/edit/*, only present when editing is enabled. */
   edit_token?: string;
   deny_patterns?: string[];
+  /** names the built-in deny patterns leave out (.env templates such as .env.example) */
+  deny_except_patterns?: string[];
+  /** the deny patterns those exceptions apply to (the built-in ones; --deny entries stay strict) */
+  deny_lifted_patterns?: string[];
   ignore_patterns?: string[];
   upload_ext?: string[];
   upload_max_bytes?: number;
@@ -50,10 +54,12 @@ export interface AppConfig {
   edit_max_bytes?: number;
   /** protected (deny-list) files can be shown read-only on request (false with --no-reveal) */
   reveal_enabled?: boolean;
+  /** this folder's hidden-file settings can be changed (off when the data dir overlaps it) */
+  hiding_enabled?: boolean;
 }
 
-/** Why a file or folder is hidden: git ignores it, the viewer's ignore list, or the deny list. */
-export type HiddenReason = "git" | "ignore" | "deny";
+/** Why a file or folder is hidden: git ignores it, the viewer's ignore list, the user hid it, or the deny list. */
+export type HiddenReason = "git" | "ignore" | "deny" | "user";
 
 export interface FileEntry {
   path: string;
@@ -62,16 +68,24 @@ export interface FileEntry {
   mtime: number;
   kind: FileKind;
   ext: string;
-  /** only on rows built from hidden entries */
+  /** /api/file only: why the opened file is hidden */
   hidden?: HiddenReason;
+  /** /api/tree: git ignores it (or a folder above it); shown dimmed */
+  ignored?: boolean;
 }
 
-/** A hidden file or folder (/api/tree?hidden=1, /api/hidden). Folders are listed when opened. */
+/** A child of a hidden folder (/api/hidden). Folders are listed when opened. */
 export interface HiddenEntry {
   path: string;
   name: string;
   dir: boolean;
   reason: HiddenReason;
+  /** "user": the user pattern that hides this exact path; "ignore": the ignore pattern its name matched */
+  rule?: string;
+  /** rule is an --ignore pattern */
+  extra?: boolean;
+  /** "show" or "hide": the user's choice for this exact path */
+  choice?: "show" | "hide";
   kind?: FileKind;
   ext?: string;
   size?: number;
@@ -81,9 +95,11 @@ export interface HiddenEntry {
 export interface TreeResponse {
   files: FileEntry[];
   dirs: string[];
+  /** visible folders git ignores, or inside one (shown dimmed) */
+  ignored_dirs?: string[];
   version: number;
-  /** only with hidden=1: the topmost hidden children of visible folders */
-  hidden?: HiddenEntry[];
+  /** how many top-level items are hidden (the Hidden files button's badge) */
+  hidden_count?: number;
 }
 
 export interface HiddenListResponse {
@@ -92,6 +108,76 @@ export interface HiddenListResponse {
   entries: HiddenEntry[];
   truncated: boolean;
 }
+
+/** A folder's hidden-file settings (GET /api/hiding), kept by the server in its data dir. */
+export interface HidingState {
+  root: string;
+  /** false when the data dir overlaps the folder: nothing can be changed (`disabled_reason` says why) */
+  enabled: boolean;
+  disabled_reason: string | null;
+  version: number;
+  hide_git: boolean;
+  git_available: boolean;
+  /** the user's patterns, as stored ("*.log", "/docs/old") */
+  rules: string[];
+  /** exact paths the user chose to show (on the ignore list or git-ignored) */
+  show: string[];
+  /** exact paths the user chose to hide */
+  hide: string[];
+  /** --ignore / DELTADECK_IGNORE patterns */
+  extra: string[];
+  /** always hidden (.git, temp files) */
+  always: string[];
+  deny: string[];
+  limits: { max_rules: number; max_rule_len: number; max_add: number; max_paths: number; max_choices: number };
+  /** only on the SSE "hiding" event: the tab that made the change */
+  client?: string;
+}
+
+/** POST /api/hiding/update body; every field but `root` is optional. */
+export interface HidingUpdate {
+  hide_git?: boolean;
+  add_rules?: string[];
+  remove_rules?: string[];
+  /** folder-relative paths to show or hide (at most `limits.max_paths` together) */
+  show?: string[];
+  hide?: string[];
+}
+
+export interface HidingUpdateResult extends HidingState {
+  /** pending: the server answered before working out what changed (a big folder); the tree fills in through "change" events */
+  applied: { hidden: string[]; shown: string[]; truncated?: boolean; pending?: boolean };
+}
+
+export type HiddenGroup = "builtin" | "git" | "user" | "deny";
+
+/** One row of the Hidden files dialog (GET /api/hiding/items): a topmost hidden item, a shown one, or a visible git-ignored one. */
+export interface HiddenRow {
+  path: string;
+  name: string;
+  dir: boolean;
+  group: HiddenGroup;
+  /** checked: it shows in the sidebar */
+  visible: boolean;
+  rule?: string;
+  /** rule is an --ignore pattern */
+  extra?: boolean;
+  choice?: "show" | "hide";
+  kind?: FileKind;
+  ext?: string;
+}
+
+export interface HiddenItems {
+  root: string;
+  version: number;
+  hide_git: boolean;
+  git_available: boolean;
+  rows: HiddenRow[];
+  truncated: boolean;
+}
+
+/** Files below a hidden item (GET /api/hiding/count); null: the server ran out of time, ask again. */
+export type HiddenCount = { files: number; more: boolean } | null;
 
 export interface FileInfo extends FileEntry {
   mime: string;
@@ -377,7 +463,7 @@ export const pdfUrl = (path: string, o: PdfOptions) =>
 /** Paths last listed as protected (deny-list): opening one asks for its metadata with reveal
  * straight away, instead of after a refused request. */
 const protectedPaths = new Set<string>();
-const noteHidden = (entries: HiddenEntry[] | undefined) => {
+export const noteHidden = (entries: { path: string; dir: boolean; reason: HiddenReason }[] | undefined) => {
   for (const e of entries ?? []) {
     if (!e.dir && e.reason === "deny") protectedPaths.add(e.path);
     else protectedPaths.delete(e.path);
@@ -388,11 +474,7 @@ export const noteProtected = (path: string) => void protectedPaths.add(path);
 
 export const api = {
   config: (signal?: AbortSignal) => getJson<AppConfig>("/api/config", signal),
-  tree: (signal?: AbortSignal, opts?: { hidden?: boolean }) =>
-    getJson<TreeResponse>(`/api/tree${qs({ hidden: opts?.hidden ? 1 : undefined })}`, signal).then((t) => {
-      noteHidden(t.hidden);
-      return t;
-    }),
+  tree: (signal?: AbortSignal) => getJson<TreeResponse>("/api/tree", signal),
   /** the direct children of one hidden folder */
   hidden: (path: string, signal?: AbortSignal) =>
     getJson<HiddenListResponse>(`/api/hidden${qs({ path })}`, signal).then((r) => {

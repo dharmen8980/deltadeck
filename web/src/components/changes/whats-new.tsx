@@ -20,7 +20,9 @@ import { api, ApiError, type FileKind, type TreeResponse } from "@/lib/api";
 import { hasLineMarks, isMarkdownText, isTracked, trackedMax } from "@/lib/change-rules";
 import { diffVersions, summarizeChange, type ChangeSummary } from "@/lib/diff";
 import { formatRelative, plural } from "@/lib/format";
+import { useGitIgnored } from "@/lib/git-ignored";
 import { viewerHref } from "@/lib/paths";
+import { IGNORED_CLASS, IGNORED_NOTE } from "@/lib/tree";
 import { cn } from "@/lib/utils";
 import {
   changedItems,
@@ -241,6 +243,7 @@ function FeedRow({
   detail,
   badge,
   active,
+  ignored,
   activeClassName,
   onOpen,
   onMarkSeen,
@@ -251,6 +254,8 @@ function FeedRow({
   detail: SummaryDetail | null;
   badge: { text: string; title: string } | null;
   active: boolean;
+  /** git ignores it: dimmed */
+  ignored: boolean;
   activeClassName?: string;
   onOpen: (path: string) => void;
   onMarkSeen?: (path: string) => void;
@@ -264,11 +269,11 @@ function FeedRow({
         asChild
         size="sm"
         isActive={active}
-        className={cn("h-auto items-start py-1.5", onAddToBasket ? "pr-13" : onMarkSeen && "pr-7", activeClassName)}
+        className={cn("h-auto items-start py-1.5", onAddToBasket ? "pr-13" : onMarkSeen && "pr-7", activeClassName, ignored && IGNORED_CLASS)}
       >
         <a
           href={viewerHref(item.path)}
-          title={`${item.path}${when ? ` · changed ${when}` : ""}${detail ? `: ${detail.text}` : ""}`}
+          title={`${item.path}${ignored ? ` · ${IGNORED_NOTE}` : ""}${when ? ` · changed ${when}` : ""}${detail ? `: ${detail.text}` : ""}`}
           onClick={(e) => {
             if (e.metaKey || e.ctrlKey || e.shiftKey || e.button !== 0) return;
             e.preventDefault();
@@ -339,6 +344,7 @@ export function WhatsNewPanel({
   const [modeId, setModeId] = useState<FeedModeId | null>(null);
   const source = sources.find((s) => s.id === modeId) ?? sources[0] ?? null;
   const { visible, observe } = useVisibleRows();
+  const gitIgnored = useGitIgnored();
   const loader = source?.loader ?? null;
   const [, rerender] = useReducer((n: number) => n + 1, 0);
   useEffect(() => loader?.subscribe(rerender), [loader]);
@@ -422,6 +428,7 @@ export function WhatsNewPanel({
                 detail={rowDetail(item)}
                 badge={source.badge?.(item) ?? null}
                 active={item.path === activePath}
+                ignored={gitIgnored.has(item.path)}
                 activeClassName={activeClassName}
                 onOpen={open}
                 onMarkSeen={markOne}

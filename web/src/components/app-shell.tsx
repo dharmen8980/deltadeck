@@ -32,6 +32,7 @@ import { READING_MAX, SIDEBAR_SPEC } from "@/lib/panel-size";
 import { Skeleton } from "@/components/ui/skeleton";
 import { FileHeader } from "@/components/file-header";
 import { FileTree } from "@/components/file-tree";
+import { HiddenFilesButton } from "@/components/hidden-files-button";
 import { HiddenNotice, ProtectedFileView } from "@/components/protected-file";
 import { FolderView, HomeView } from "@/components/folder-view";
 import { MenuFolderPick, NoRootView, reloadHome, RootSwitcher } from "@/components/root-switcher";
@@ -50,9 +51,11 @@ import { TextViewer } from "@/components/viewers/text-viewer";
 import { XlsxViewer } from "@/components/viewers/xlsx-viewer";
 import { useChangeTracker } from "@/hooks/use-change-tracker";
 import { useEvents } from "@/hooks/use-events";
+import { clearOptimistic, emitHiddenChanged, pruneOptimistic, setHidingState, useOptimisticHidden } from "@/lib/hiding-api";
+import { setGitIgnored } from "@/lib/git-ignored";
 import { setNavigationGuard, useRoute } from "@/hooks/use-route";
 import { useTree } from "@/hooks/use-tree";
-import { api, ApiError, errorMessage, isKnownProtected, noteProtected, type AppConfig, type ChangeEvent, type FileInfo, type FileKind } from "@/lib/api";
+import { api, ApiError, errorMessage, isKnownProtected, noteProtected, type AppConfig, type ChangeEvent, type FileInfo, type FileKind, type HidingState } from "@/lib/api";
 import { CONTENT_MAX, remapPath, TEXT_KINDS } from "@/lib/change-rules";
 import { configureEditClient, editMaxBytes } from "@/lib/edit-api";
 import { isEditable } from "@/lib/editor-lang";
@@ -61,7 +64,7 @@ import { createPref, usePref } from "@/lib/prefs";
 import { FindController } from "@/components/find/find-controller";
 import { configureRootsClient } from "@/lib/roots-api";
 import { ancestors, basename, dirname } from "@/lib/paths";
-import { buildTree, findDir, type SortMode } from "@/lib/tree";
+import { buildTree, findDir, withoutHidden, type SortMode } from "@/lib/tree";
 
 const EMPTY_SET: ReadonlySet<string> = new Set();
 const NO_KINDS: FileKind[] = [];
@@ -82,7 +85,6 @@ const kindsPref = createPref<FileKind[]>(
   (v) => JSON.stringify(v),
 );
 const changedOnlyPref = createPref<boolean>("viewer.changedOnly", (raw) => raw === "1", (on) => (on ? "1" : "0"));
-const showHiddenPref = createPref<boolean>("viewer.showHidden", (raw) => raw === "1", (on) => (on ? "1" : null));
 
 // The editor (and CodeMirror) is only downloaded when someone actually edits.
 const EditorPane = lazy(() => import("@/components/edit/editor-pane").then((m) => ({ default: m.EditorPane })));
@@ -260,8 +262,7 @@ function EditorSlot(props: Omit<React.ComponentProps<typeof EditorPane>, "onOpen
 function Shell({ initialConfig }: { initialConfig: AppConfig | null }) {
   const route = useRoute();
   const { navigate } = route;
-  const showHidden = usePref(showHiddenPref, false);
-  const { tree, loading, error, refresh } = useTree(showHidden);
+  const { tree, loading, error, refresh } = useTree();
   const { setOpen, setOpenMobile, isMobile } = useSidebar();
   const [config, setConfig] = useState<AppConfig | null>(initialConfig);
   const sort = usePref(sortPref, "name");
@@ -327,6 +328,21 @@ function Shell({ initialConfig }: { initialConfig: AppConfig | null }) {
     });
   }, [config]);
 
+  // ---------- hidden-file settings (per folder, kept by the server: /api/hiding) ----------
+  const hidingRoot = config && !config.no_root ? (config.root_path ?? null) : null;
+  useEffect(() => {
+    setHidingState(null);
+    clearOptimistic();
+  }, [hidingRoot]);
+  const onHidingEvent = useCallback(
+    (state: HidingState) => {
+      if (state.root !== hidingRoot) return;
+      setHidingState(state);
+      emitHiddenChanged(state.client ?? null);
+    },
+    [hidingRoot],
+  );
+
   /** Unsaved edits are lost on a folder switch: ask first. */
   const confirmLeave = useCallback(() => {
     const e = editRef.current;
@@ -344,7 +360,6 @@ function Shell({ initialConfig }: { initialConfig: AppConfig | null }) {
   const changeKinds = useCallback((k: FileKind[]) => kindsPref.set(k), []);
   const changeSort = useCallback((s: SortMode) => sortPref.set(s), []);
   const changeChangedOnly = useCallback((on: boolean) => changedOnlyPref.set(on), []);
-  const changeShowHidden = useCallback((on: boolean) => showHiddenPref.set(on), []);
   // Leaving a file (to another file, a folder or home) records the version that was on screen.
   // A route effect, not an unmount cleanup: StrictMode re-runs cleanups.
   const { flushPending, rename: renameChanges, expectOwnWrite, ownSave, onSeenEvent, resync: resyncChanges } = changes;
@@ -354,7 +369,18 @@ function Shell({ initialConfig }: { initialConfig: AppConfig | null }) {
   );
   useEffect(() => flushPending(route.path), [route.path, flushPending]);
 
-  const root = useMemo(() => (tree ? buildTree(tree, { hidden: showHidden }) : null), [tree, showHidden]);
+  // Hides just asked for leave the sidebar at once; the server's tree drops them a moment later.
+  const optimistic = useOptimisticHidden();
+  useEffect(() => {
+    if (!tree) return;
+    pruneOptimistic(tree);
+    setGitIgnored(tree);
+  }, [tree]);
+  const viewTree = useMemo(
+    () => (tree ? withoutHidden(tree, optimistic.paths) : null),
+    [tree, optimistic],
+  );
+  const root = useMemo(() => (viewTree ? buildTree(viewTree) : null), [viewTree]);
   const rootName = config?.root_name ?? "DeltaDeck";
 
   useEffect(() => {
@@ -493,6 +519,7 @@ function Shell({ initialConfig }: { initialConfig: AppConfig | null }) {
   const onChange = useCallback(
     (ev: ChangeEvent) => {
       refresh();
+      if (ev.hidden_changed) emitHiddenChanged();
       // Before any navigation: following a rename is not leaving the file.
       for (const r of ev.renames) renameChanges(r.from, r.to);
       const cur = pathRef.current;
@@ -525,7 +552,7 @@ function Shell({ initialConfig }: { initialConfig: AppConfig | null }) {
           gone();
           return;
         }
-        // A .gitignore change can hide the open file without deleting it: still there, reload it.
+        // A .gitignore change or a hide rule can hide the open file without deleting it: still there, reload it.
         loadFileInfo(cur, Boolean(configRef.current?.reveal_enabled)).then(
           () => {
             if (pathRef.current === cur && !editing) setReloadKey((k) => k + 1);
@@ -572,11 +599,12 @@ function Shell({ initialConfig }: { initialConfig: AppConfig | null }) {
     // Changes may have been missed while disconnected: let the editor compare with the disk.
     if (editRef.current) editorRef.current?.externalChange("modified");
     resyncChanges();
+    emitHiddenChanged();
     // The stream also drops when the folder is switched (from another tab): follow it.
     checkRoot();
   }, [refresh, checkRoot, resyncChanges]);
   // A stream that keeps failing (409 with no folder selected) never reopens: re-check there too.
-  const liveStatus = useEvents(onChange, onReconnect, checkRoot, onSeenEvent);
+  const liveStatus = useEvents(onChange, onReconnect, checkRoot, onSeenEvent, onHidingEvent);
 
   // Keyboard: "/" and Cmd/Ctrl-K open search.
   useEffect(() => {
@@ -714,7 +742,7 @@ function Shell({ initialConfig }: { initialConfig: AppConfig | null }) {
     );
   } else if (!route.path) {
     body = error && !tree ? <ViewerError title="Cannot reach the viewer API" message={error} /> : (
-      <HomeView tree={tree} root={root} rootName={rootName} onOpen={onOpen} />
+      <HomeView tree={viewTree} root={root} rootName={rootName} onOpen={onOpen} />
     );
   } else if (dirNode) {
     body = <FolderView node={dirNode} sort={sort} onOpen={onOpen} />;
@@ -758,16 +786,21 @@ function Shell({ initialConfig }: { initialConfig: AppConfig | null }) {
         <GitContext.Provider value={git}>
           <MenuFolderPick beforeSwitch={confirmLeave} onLeave={onLeave} />
           <FileTree
-            tree={tree}
+            tree={viewTree}
             root={root}
             loading={loading}
             error={error}
             rootName={rootName}
             rootPath={config?.root_path}
             rootSwitcher={
-              config?.root_switch_enabled ? (
-                <RootSwitcher rootPath={config.root_path ?? null} beforeSwitch={confirmLeave} onLeave={onLeave} />
-              ) : null
+              <>
+                {hidingRoot ? (
+                  <HiddenFilesButton root={hidingRoot} count={tree?.hidden_count ?? 0} onOpen={onOpen} />
+                ) : null}
+                {config?.root_switch_enabled ? (
+                  <RootSwitcher rootPath={config.root_path ?? null} beforeSwitch={confirmLeave} onLeave={onLeave} />
+                ) : null}
+              </>
             }
             sort={sort}
             onSortChange={changeSort}
@@ -786,8 +819,7 @@ function Shell({ initialConfig }: { initialConfig: AppConfig | null }) {
             onMarkAllSeen={changes.markAllSeen}
             onClearHistory={changes.clearHistory}
             onOpenGit={onOpenGit}
-            showHidden={showHidden}
-            onShowHiddenChange={changeShowHidden}
+            hidingRoot={hidingRoot && config?.hiding_enabled !== false ? hidingRoot : null}
           />
           <SidebarInset className="min-w-0">
             <FileHeader

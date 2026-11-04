@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import concurrent.futures
 import contextlib
 import logging
 import os
@@ -22,12 +23,15 @@ from .file_routes import PDF_CSP, SVG_CSP, register_file_routes  # noqa: F401 - 
 from .git import GitLink
 from .git_routes import register_git_routes
 from .hidden import GitIgnored, list_hidden_dir
+from .hiding import Hiding, HidingPrefs, load_prefs
 from .http_common import (  # noqa: F401 - prefixes and path tests re-exported for older imports
     ALLOWED_HOSTS,
+    HIDING_PREFIX,
     ROOTS_PREFIX,
     SEEN_PREFIX,
     forwarded_hosts_ok,
     is_gated_path,
+    is_hiding_path,
     is_roots_path,
     is_seen_path,
     same_site_request,
@@ -49,8 +53,8 @@ ALLOWED_METHODS = {"GET", "HEAD"}
 
 class SecurityMiddleware:
     """Pure ASGI: refuse non-GET/HEAD (except below /api/edit, which EditGate guards, and, with
-    roots=True, below /api/roots and /api/seen, which RootGate guards), add security headers to
-    every response."""
+    roots=True, below /api/roots, /api/seen and /api/hiding, which RootGate guards), add security
+    headers to every response."""
 
     def __init__(self, app, *, roots: bool = False):
         self.app = app
@@ -121,19 +125,25 @@ def find_repo_prefix(root: str) -> str:
 
 
 def config_payload(settings: Settings, *, root_present: bool, editor: Editor | None, git_enabled: bool,
-                   repo_prefix: str = "") -> dict:
+                   repo_prefix: str = "", hiding: Hiding | None = None) -> dict:
     """The /api/config body shared by a root's app and the no-folder app (RootSwitcher); the
-    caller adds the request-dependent tokens."""
+    caller adds the request-dependent tokens. hiding: the folder's hidden-file settings (whether
+    they can be changed). ignore_patterns: the client's pre-check of new names (the server's
+    path-aware check decides)."""
     root = settings.root if root_present else None
+    ignore = list(settings.ignore)
+    deny_lifted, _ = settings.deny_split()
     return {"root_name": os.path.basename(root) if root else None, "repo_prefix": repo_prefix,
             "search_max_bytes": settings.search_max_bytes, "version": __version__,
             "edit_enabled": editor is not None, "edit_off_reason": settings.edit_off_reason or None,
-            "deny_patterns": list(settings.deny),
-            "ignore_patterns": list(settings.ignore), "upload_ext": list(settings.upload_ext),
+            "deny_patterns": list(settings.deny), "deny_except_patterns": list(settings.deny_except),
+            "deny_lifted_patterns": list(deny_lifted),
+            "ignore_patterns": ignore, "upload_ext": list(settings.upload_ext),
             "upload_max_bytes": settings.upload_max_bytes, "edit_max_bytes": settings.edit_max_bytes,
             "upload_max_files": MAX_UPLOAD_FILES, "root_path": root, "no_root": not root_present,
             "root_switch_enabled": False, "git_enabled": git_enabled, "desktop": settings.desktop,
-            "reveal_enabled": settings.allow_reveal}
+            "reveal_enabled": settings.allow_reveal,
+            "hiding_enabled": hiding.enabled if hiding is not None else False}
 
 
 def mount_ui(app: FastAPI, ui_dir: str) -> None:
@@ -187,6 +197,10 @@ def create_app(settings: Settings) -> FastAPI:
     git = GitLink(settings, guard)  # detected on first use (off: not a repo, no git, --git off)
     ignored = GitIgnored(git.repo, guard)
     store = Store(guard, ignored)
+    # the folder's hide rules and git toggle (data dir, never the folder), before the first scan
+    hiding = Hiding(settings, guard, ignored, store, lambda: git.repo() is not None)
+    hiding.install(load_prefs(settings) if hiding.enabled else HidingPrefs())
+    store.hiding = hiding  # refresh_ignored also refreshes what git tracks in ignore-list folders
     editor = Editor(settings, guard, store) if settings.allow_edit else None
     index = SearchIndex(store, settings.search_max_bytes, index_dir=search_index_dir(settings),
                         max_files=settings.search_max_files, max_total_bytes=settings.search_max_total_bytes)
@@ -194,11 +208,32 @@ def create_app(settings: Settings) -> FastAPI:
     pdf = make_pdf_renderer(settings)
     closing = asyncio.Event()  # set on lifespan shutdown: ends this app's SSE streams (root switch)
 
-    async def on_change(ch: Change) -> None:
+    # the search index applies changes one at a time, in the order they were published
+    index_pool = concurrent.futures.ThreadPoolExecutor(1, thread_name_prefix="search-apply")
+
+    def index_done(fut: concurrent.futures.Future) -> None:
+        if not fut.cancelled() and fut.exception() is not None:
+            log.error("search index: applying a change failed", exc_info=fut.exception())
+
+    async def on_change(ch: Change, wait: bool = True) -> None:
+        """Publish ch ("change" SSE event) and update the search index; wait=False: the index
+        follows in the background (a hide or show answers before a large folder is read)."""
         data = ch.to_json()
         store.publish(ch)
-        await asyncio.to_thread(index.apply_change, data)
+        try:
+            fut = index_pool.submit(index.apply_change, data)
+        except RuntimeError:  # shut down (the app is closing)
+            return
+        if wait:
+            await asyncio.wrap_future(fut)
+        else:
+            fut.add_done_callback(index_done)
 
+    def index_flush(timeout: float | None = None) -> None:
+        """Block until the changes published so far are in the search index (tests)."""
+        index_pool.submit(lambda: None).result(timeout)
+
+    hiding.on_change = on_change
     quick_s, full_s, remote = backstop_intervals(settings)
     reconciler = Reconciler(store, on_change, quick_interval=quick_s, full_interval=full_s,
                             watching=settings.watch, pause_idle=not settings.rescan_when_idle, remote=remote)
@@ -207,6 +242,9 @@ def create_app(settings: Settings) -> FastAPI:
     @contextlib.asynccontextmanager
     async def lifespan(app: FastAPI):
         store.bind_loop(asyncio.get_running_loop())
+        # files git tracks in ignore-list folders stay visible (a committed node_modules/patched.js)
+        await asyncio.to_thread(hiding.refresh_tracked, True)
+        # (also while the folder shows them, the default: the tree dims them)
         await asyncio.to_thread(ignored.refresh)  # failing: shown as before, asked again at the next pass
         await asyncio.to_thread(store.full_scan)
         reconciler.reset()
@@ -225,7 +263,9 @@ def create_app(settings: Settings) -> FastAPI:
             closing.set()
             store.close_streams()
             stop.set()
+            hiding.close()
             index.stop()
+            index_pool.shutdown(wait=False, cancel_futures=True)
             for t in tasks:
                 t.cancel()
             await asyncio.gather(*tasks, return_exceptions=True)
@@ -246,6 +286,9 @@ def create_app(settings: Settings) -> FastAPI:
     app.state.closing = closing
     app.state.git = git
     app.state.reconciler = reconciler
+    app.state.hiding = hiding
+    app.state.on_change = on_change
+    app.state.index_flush = index_flush
     app.state.config_extra = None  # RootSwitcher: request -> {"root_switch_enabled", "root_token"?}
 
     def get(path: str):
@@ -254,7 +297,7 @@ def create_app(settings: Settings) -> FastAPI:
     @get("/api/config")
     def api_config(request: Request):
         out = config_payload(settings, root_present=True, editor=editor, git_enabled=git.repo() is not None,
-                             repo_prefix=repo_prefix)
+                             repo_prefix=repo_prefix, hiding=hiding)
         if editor is not None and same_site_request(request):
             out["edit_token"] = editor.token
         if app.state.config_extra is not None:
@@ -262,12 +305,12 @@ def create_app(settings: Settings) -> FastAPI:
         return JSONResponse(out, headers={"Cache-Control": "no-store"})
 
     @get("/api/tree")
-    def api_tree(hidden: str = "0"):
-        return store.snapshot(hidden=hidden in ("1", "true"), denied=settings.allow_reveal)
+    def api_tree():
+        return store.snapshot(denied=settings.allow_reveal)
 
     @get("/api/hidden")
     def api_hidden(path: str | None = None):
-        """The children of one hidden folder, listed when it is expanded (Show hidden files)."""
+        """The children of one hidden folder, listed when it is expanded (Hidden files)."""
         return list_hidden_dir(store, guard, path, include_denied=settings.allow_reveal)
 
     register_file_routes(app, settings, guard, pdf, repo_prefix, store)
