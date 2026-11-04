@@ -6,8 +6,9 @@
 - **Writes only through `/api/edit/*`.** Every other route is GET or HEAD;
   anything else returns 405 (except the token-guarded `POST /api/roots/*`, see [The
   /api/roots endpoints](configuration.md#the-apiroots-endpoints-and-their-security-model),
-  and `POST /api/seen/*`, see [below](#the-apiseen-endpoints)). Editing is on
-  by default; its writes are limited to `/api/edit/*` and protected (per-launch
+  and `POST /api/seen/*`, see [below](#the-apiseen-endpoints)). Editing is
+  available by default (files open read-only until you press **Edit**); its
+  writes are limited to `/api/edit/*` and protected (per-launch
   edit token, same-site checks) as described in [How writes are protected](editing.md#how-writes-are-protected).
   With `--read-only` (or in a folder that overlaps the data dir) the server
   never writes inside the root and `/api/edit/*` returns 403; use it when

@@ -1,10 +1,15 @@
 # Editing
 
 ```sh
-uv run deltadeck                                   # editing is on by default
+uv run deltadeck                                   # files open read-only; Edit is a button
 uv run deltadeck --data-dir ~/deltadeck-data       # keep history/trash elsewhere
 uv run deltadeck --read-only                       # or DELTADECK_READ_ONLY=1: editing off
 ```
+
+Files always open read-only. Nothing changes until you press **Edit** in the
+header (or use file management, below), so starting DeltaDeck with editing
+available is safe for review. `--read-only` removes the Edit button and file
+management altogether.
 
 The server logs `editing on` with the data dir path. With `--read-only` no
 edit UI is shown, the header shows a **Read-only** badge, every `/api/edit/*`

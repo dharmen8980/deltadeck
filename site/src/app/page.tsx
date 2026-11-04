@@ -378,7 +378,7 @@ const FAQ = [
   },
   {
     q: "Does it edit my files?",
-    a: "Only when you do. Editing is on by default: an editor and file management with version history and undo. Start it with --read-only, or turn off Allow editing in the desktop app's menu, to make it view-only.",
+    a: "Only when you do. Files open read-only; pressing Edit opens an editor, and file management comes with version history and undo. Start it with --read-only, or turn off Allow editing in the desktop app's menu, to remove editing altogether.",
   },
   {
     q: "Why is the Mac app unsigned?",

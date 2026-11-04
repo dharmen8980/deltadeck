@@ -24,8 +24,9 @@ xattr -dr com.apple.quarantine "/Applications/DeltaDeck.app"
 ```
 
 **Using it.** File → **Open Folder…** (Cmd/Ctrl+O) picks a folder; the app
-reopens the last one on start. Editing is on by default: **Settings → Allow
-editing** (on Linux under File) turns it off or back on (turning it on asks
+reopens the last one on start. Files open read-only, with an **Edit**
+button in the header. **Settings → Allow editing** (on Linux under File)
+removes that button and file management, or brings them back (turning it on asks
 for a confirmation), is remembered, and restarts the server (unsaved editor changes are lost).
 
 **macOS folder access.** The folder you open is yours to read, but anything

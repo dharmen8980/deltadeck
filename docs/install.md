@@ -114,8 +114,8 @@ deltadeck --root ~/notes            # then run it on a folder
 pipx run deltadeck --root .         # or run it once with pipx
 ```
 
-Without `--root` you choose a folder in the browser. Editing is on; `--read-only`
-turns it off, `--port N` picks another port; see [Configuration](configuration.md).
+Without `--root` you choose a folder in the browser. Files open read-only with an
+**Edit** button; `--read-only` removes it, `--port N` picks another port; see [Configuration](configuration.md).
 PDF export uses Google Chrome if it is installed (see [PDF export](pdf-export.md)).
 
 ## Download from Releases

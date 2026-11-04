@@ -254,7 +254,7 @@ def build_parser() -> argparse.ArgumentParser:
                         f"default {DEFAULT_SEARCH_MAX_TOTAL_MB:g})")
     p.add_argument("--ui-dir", help=f"built UI directory (default {DEFAULT_UI_DIR})")
     p.add_argument("--read-only", action="store_true", default=None,
-                   help="turn off editing and file management (env DELTADECK_READ_ONLY=1; default: editing on)")
+                   help="turn off editing and file management (env DELTADECK_READ_ONLY=1; default: files open read-only, with an Edit button)")
     p.add_argument("--allow-edit", action="store_true", default=None, help=argparse.SUPPRESS)  # default now
     p.add_argument("--data-dir", help=f"history/trash/audit store (env DELTADECK_DATA_DIR, default {DEFAULT_DATA_DIR})")
     p.add_argument("--history-keep", type=int, help=f"versions kept per file (default {DEFAULT_HISTORY_KEEP})")
