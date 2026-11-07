@@ -172,7 +172,9 @@ export function PrintDocument() {
   const pageCss =
     `@page { size: ${paperKey === "a4" ? "A4" : "letter"} ${landscape ? "landscape" : "portrait"}; ` +
     `margin: ${MARGIN.top}mm ${MARGIN.right}mm ${MARGIN.bottom}mm ${MARGIN.left}mm; }\n` +
-    `:root { --pdf-content-w: ${contentW}mm; --pdf-content-h: ${contentH}mm; }`;
+    `:root { --pdf-content-w: ${contentW}mm; --pdf-content-h: ${contentH}mm; }\n` +
+    // Only on this page (not `html:has(.pdf-doc)` in globals.css: see the note there).
+    `html, body { background: #fff !important; color: #111 !important; min-height: 0; height: auto; }`;
 
   useEffect(() => {
     document.title = title;

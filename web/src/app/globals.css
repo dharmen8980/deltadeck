@@ -503,14 +503,9 @@ mark.hl.hl-active {
 }
 
 /* ---------- PDF print layout (/print, rendered by headless Chrome for /api/pdf) ---------- */
-/* @page size/margins and --pdf-content-w/-h are written by the page from its query. */
-html:has(.pdf-doc),
-html:has(.pdf-doc) body {
-  background: #fff !important;
-  color: #111 !important;
-  min-height: 0;
-  height: auto;
-}
+/* @page size/margins, --pdf-content-w/-h and the html/body reset are written by the page
+   (components/print-document.tsx). Never `html:has(...)` here: it makes Chrome restyle the whole
+   app on every DOM change, and mermaid's text measuring then freezes large documents. */
 .pdf-doc {
   --pdf-figure-max-h: calc(var(--pdf-content-h, 260mm) - 22mm);
   max-width: var(--pdf-content-w, 180mm);
