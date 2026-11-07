@@ -23,7 +23,7 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { name: macos-arm64, os: macos-14, target: mac }
+          - { name: macos-arm64, os: macos-15, target: mac } # macos-14 image is retired
           - { name: macos-x64, os: macos-15-intel, target: mac } # macos-13 (last Intel image) is retired
           - { name: linux-x64, os: ubuntu-22.04, target: linux }
     runs-on: ${{ matrix.os }}
