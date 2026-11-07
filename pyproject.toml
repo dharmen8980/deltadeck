@@ -1,6 +1,6 @@
 [project]
 name = "deltadeck"
-version = "0.2.2"
+version = "0.2.3"
 description = "Review what your AI changed, and hand it back. A local viewer for docs and code that highlights what changed."
 readme = "README.md"
 requires-python = ">=3.13"
